@@ -202,35 +202,98 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 					check(data, v1, reverse(decrement(reverse(v2))))
 				}
 
-				// Base-128.
-				// TODO: try to treat the value as negative.
-				var u1, u2 uint64
-				for i := 0; i < len(v1); i++ {
-					u1 += uint64(v1[i]) << uint(i*8)
+				// Varint, ascii
+
+				checkuint := func(u1, u2 uint64) {
+					if u1 == u2 {
+						return
+					}
+					if u1 > 127 || u2 > 127 { // otherwise it's the same as byte replacement
+						var vv1, vv2 [10]byte
+						n1 := binary.PutUvarint(vv1[:], u1)
+						n2 := binary.PutUvarint(vv2[:], u2)
+						check(data, vv1[:n1], vv2[:n2])
+
+						// Increment/decrement in base-128.
+						n1 = binary.PutUvarint(vv1[:], u1+1)
+						n2 = binary.PutUvarint(vv2[:], u2+1)
+						check(data, vv1[:n1], vv2[:n2])
+						n1 = binary.PutUvarint(vv1[:], u1-1)
+						n2 = binary.PutUvarint(vv2[:], u2-1)
+						check(data, vv1[:n1], vv2[:n2])
+					}
+
+					// Ascii-encoding.
+					for _, base := range [...]int{2, 8, 10, 16} {
+						s1 := strconv.FormatUint(u1, base)
+						s2 := strconv.FormatUint(u2, base)
+						// TODO: add prefixes like 0b, 0, 0x?
+						check(data, []byte(s1), []byte(s2))
+					}
 				}
-				for i := 0; i < len(v2); i++ {
-					u2 += uint64(v2[i]) << uint(i*8)
-				}
-				if u1 > 127 || u2 > 127 { // otherwise it's the same as byte replacement
+
+				checkint := func(u1, u2 int64) {
+					if u1 == u2 {
+						return
+					}
+					// TODO: This isn't the right set of conditions!
+					// if u1 > 127 || u2 > 127 { // otherwise it's the same as byte replacement
 					var vv1, vv2 [10]byte
-					n1 := binary.PutUvarint(vv1[:], u1)
-					n2 := binary.PutUvarint(vv2[:], u2)
+					n1 := binary.PutVarint(vv1[:], u1)
+					n2 := binary.PutVarint(vv2[:], u2)
 					check(data, vv1[:n1], vv2[:n2])
 
 					// Increment/decrement in base-128.
-					n1 = binary.PutUvarint(vv1[:], u1+1)
-					n2 = binary.PutUvarint(vv2[:], u2+1)
+					n1 = binary.PutVarint(vv1[:], u1+1)
+					n2 = binary.PutVarint(vv2[:], u2+1)
 					check(data, vv1[:n1], vv2[:n2])
-					n1 = binary.PutUvarint(vv1[:], u1-1)
-					n2 = binary.PutUvarint(vv2[:], u2-1)
+					n1 = binary.PutVarint(vv1[:], u1-1)
+					n2 = binary.PutVarint(vv2[:], u2-1)
 					check(data, vv1[:n1], vv2[:n2])
+					// }
+
+					// Ascii-encoding.
+					for _, base := range [...]int{2, 8, 10, 16} {
+						s1 := strconv.FormatInt(u1, base)
+						s2 := strconv.FormatInt(u2, base)
+						// TODO: add prefixes like 0b, 0, 0x?
+						check(data, []byte(s1), []byte(s2))
+					}
 				}
 
-				// Ascii-encoding.
-				// TODO: try to treat the value as negative.
-				s1 := strconv.FormatUint(u1, 10)
-				s2 := strconv.FormatUint(u2, 10)
-				check(data, []byte(s1), []byte(s2))
+				bytes2ints := func(buf []byte) (ul, ub uint64, sl, sb int64) {
+					switch len(buf) {
+					case 1:
+						ul = uint64(buf[0])
+						ub = uint64(buf[0])
+						sl = int64(int8(buf[0]))
+						sb = int64(int8(buf[0]))
+					case 2:
+						ul = uint64(binary.LittleEndian.Uint16(buf))
+						ub = uint64(binary.BigEndian.Uint16(buf))
+						sl = int64(int16(binary.LittleEndian.Uint16(buf)))
+						sb = int64(int16(binary.BigEndian.Uint16(buf)))
+					case 4:
+						ul = uint64(binary.LittleEndian.Uint32(buf))
+						ub = uint64(binary.BigEndian.Uint32(buf))
+						sl = int64(int32(binary.LittleEndian.Uint32(buf)))
+						sb = int64(int32(binary.BigEndian.Uint32(buf)))
+					case 8:
+						ul = uint64(binary.LittleEndian.Uint64(buf))
+						ub = uint64(binary.BigEndian.Uint64(buf))
+						sl = int64(binary.LittleEndian.Uint64(buf))
+						sb = int64(binary.BigEndian.Uint64(buf))
+					}
+					return
+				}
+
+				ul1, ub1, sl1, sb1 := bytes2ints(v1)
+				ul2, ub2, sl2, sb2 := bytes2ints(v2)
+
+				checkuint(ul1, ul2)
+				checkuint(ub1, ub2)
+				checkint(sl1, sl2)
+				checkint(sb1, sb2)
 			}
 			check(data, []byte(hex.EncodeToString(v1)), []byte(hex.EncodeToString(v2)))
 		}
