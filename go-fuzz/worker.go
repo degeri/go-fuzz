@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
+	"github.com/pkg/profile"
 )
 
 const (
@@ -50,6 +51,8 @@ type Worker struct {
 	lastSync time.Time
 	stats    Stats
 	execs    [execCount]uint64
+
+	prof interface{ Stop() }
 }
 
 type Input struct {
@@ -67,6 +70,7 @@ type Input struct {
 }
 
 func workerMain() {
+	p := profile.Start(profile.CPUProfile, profile.ProfilePath("."))
 	zipr, err := zip.OpenReader(*flagBin)
 	if err != nil {
 		log.Fatalf("failed to open bin file: %v", err)
@@ -124,6 +128,7 @@ func workerMain() {
 			id:      i,
 			hub:     hub,
 			mutator: newMutator(),
+			prof:    p,
 		}
 		s.coverBin = newTestBinary(coverBin, s.periodicCheck, &s.stats)
 		s.sonarBin = newTestBinary(sonarBin, s.periodicCheck, &s.stats)
@@ -627,6 +632,7 @@ func (w *Worker) periodicCheck() {
 func (w *Worker) shutdown() {
 	w.coverBin.close()
 	w.sonarBin.close()
+	w.prof.Stop()
 }
 
 func extractSuppression(out []byte) []byte {

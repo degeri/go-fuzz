@@ -86,6 +86,9 @@ func main() {
 	for _, p := range goListList(pkg, "Deps") {
 		deps[p] = goListBool(p, "Standard")
 	}
+	for _, p := range goListList("runtime/pprof", "Deps") {
+		deps[p] = goListBool(p, "Standard")
+	}
 	deps[pkg] = goListBool(pkg, "Standard")
 	// Also add all go-fuzz-dep dependencies.
 	for _, p := range goListList("github.com/dvyukov/go-fuzz/go-fuzz-dep", "Deps") {
@@ -257,7 +260,7 @@ func clonePackage(workdir, pkg, targetPkg string, std bool) {
 		root = "gopath"
 	}
 	newDir := filepath.Join(workdir, root, "src", targetPkg)
-	copyDir(dir, newDir, false, isSourceFile)
+	copyDir(dir, newDir, true, isSourceFile)
 }
 
 type Package struct {
@@ -316,15 +319,15 @@ func instrumentPackages(workdir string, deps map[string]bool, lits map[Literal]s
 		"errors":                          true, // nothing to see here (also creates import cycle with go-fuzz-dep)
 		"syscall":                         true, // creates import cycle with go-fuzz-dep (and probably nothing to see here)
 		"internal/syscall/windows/sysdll": true, //syscall depends on it
-		"sync":             true, // non-deterministic and not interesting (also creates import cycle with go-fuzz-dep)
-		"sync/atomic":      true, // not interesting (also creates import cycle with go-fuzz-dep)
-		"time":             true, // creates import cycle with go-fuzz-dep
-		"internal/bytealg": true, // runtime depends on it
-		"internal/cpu":     true, // runtime depends on it
-		"internal/race":    true, // runtime depends on it
-		"runtime/cgo":      true, // why would we instrument it?
-		"runtime/pprof":    true, // why would we instrument it?
-		"runtime/race":     true, // why would we instrument it?
+		"sync":                            true, // non-deterministic and not interesting (also creates import cycle with go-fuzz-dep)
+		"sync/atomic":                     true, // not interesting (also creates import cycle with go-fuzz-dep)
+		"time":                            true, // creates import cycle with go-fuzz-dep
+		"internal/bytealg":                true, // runtime depends on it
+		"internal/cpu":                    true, // runtime depends on it
+		"internal/race":                   true, // runtime depends on it
+		"runtime/cgo":                     true, // why would we instrument it?
+		// "runtime/pprof":                   true, // why would we instrument it?
+		"runtime/race": true, // why would we instrument it?
 	}
 	if runtime.GOOS == "windows" {
 		// Cross-compilation is not implemented.
@@ -430,6 +433,7 @@ func instrumentPackages(workdir string, deps map[string]bool, lits map[Literal]s
 }
 
 func copyDir(dir, newDir string, rec bool, pred func(string) bool) {
+	fmt.Println("copydir", dir, newDir, rec)
 	mkdirAll(newDir)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -553,9 +557,21 @@ package main
 import (
 	target "%v"
 	dep "go-fuzz-dep"
+	"os"
+	"strconv"
+	"time"
+	"runtime/pprof"
 )
 
 func main() {
+	f, err := os.Create("cpu"+strconv.Itoa(os.Getpid()))
+	if err != nil {
+		panic(err)
+	}
+	if err := pprof.StartCPUProfile(f); err != nil {
+		panic(err)
+	}
+	time.AfterFunc(time.Second*15, pprof.StopCPUProfile)
 	dep.Main(target.%v)
 }
 `

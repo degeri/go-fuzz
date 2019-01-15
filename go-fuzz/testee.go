@@ -235,7 +235,7 @@ retry:
 		select {
 		case <-t.downC:
 		case <-shutdownC:
-			t.cmd.Process.Signal(syscall.SIGKILL)
+			t.cmd.Process.Signal(syscall.SIGTERM)
 		}
 	}()
 	return t
@@ -251,7 +251,7 @@ func (t *Testee) test(data []byte) (res int, ns uint64, cover, sonar []byte, cra
 	// so we recreate it periodically.
 	t.execs++
 	if t.execs > 10000 {
-		t.cmd.Process.Signal(syscall.SIGKILL)
+		t.cmd.Process.Signal(syscall.SIGTERM)
 		retry = true
 		return
 	}
