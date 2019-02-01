@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -34,7 +35,7 @@ func instrument(pkg, shortName, fullName string, fset *token.FileSet, parsedFile
 	file.addImport("go-fuzz-dep", fuzzdepPkg, "Main")
 
 	if lits != nil {
-		ast.Walk(&LiteralCollector{lits}, file.astFile)
+		ast.Walk(&LiteralCollector{lits, info}, file.astFile)
 	}
 
 	ast.Walk(file, file.astFile)
@@ -395,16 +396,23 @@ func isLen(n ast.Expr) bool {
 
 type LiteralCollector struct {
 	lits map[Literal]struct{}
+	info *types.Info
 }
 
 func (lc *LiteralCollector) Visit(n ast.Node) (w ast.Visitor) {
+	if expr, ok := n.(ast.Expr); ok {
+		if tv := lc.info.Types[expr]; tv.Value != nil {
+			lc.addValue(tv)
+			// don't recurse; if we encounter (say) "a"+"b", we only want to add "ab" to our set of literals
+			return nil
+		}
+	}
+
 	switch nn := n.(type) {
 	default:
 		return lc // recurse
-	case *ast.ImportSpec:
+	case *ast.ImportSpec, *ast.Field: // ignore import statements, field tags
 		return nil
-	case *ast.Field:
-		return nil // ignore field tags
 	case *ast.CallExpr:
 		switch fn := nn.Fun.(type) {
 		case *ast.Ident:
@@ -412,43 +420,93 @@ func (lc *LiteralCollector) Visit(n ast.Node) (w ast.Visitor) {
 				return nil
 			}
 		case *ast.SelectorExpr:
+			// TODO: ignore package log as well?
 			if id, ok := fn.X.(*ast.Ident); ok && (id.Name == "fmt" || id.Name == "errors") {
 				return nil
 			}
 		}
 		return lc
-	case *ast.BasicLit:
-		lit := nn.Value
-		switch nn.Kind {
-		case token.STRING:
-			lc.lits[Literal{unquote(lit), true}] = struct{}{}
-		case token.CHAR:
-			lc.lits[Literal{unquote(lit), false}] = struct{}{}
-		case token.INT:
-			if lit[0] < '0' || lit[0] > '9' {
-				failf("unsupported literal '%v'", lit)
-			}
-			v, err := strconv.ParseInt(lit, 0, 64)
-			if err != nil {
-				u, err := strconv.ParseUint(lit, 0, 64)
-				if err != nil {
-					failf("failed to parse int literal '%v': %v", lit, err)
-				}
-				v = int64(u)
-			}
-			var val []byte
-			if v >= -(1<<7) && v < 1<<8 {
-				val = append(val, byte(v))
-			} else if v >= -(1<<15) && v < 1<<16 {
-				val = append(val, byte(v), byte(v>>8))
-			} else if v >= -(1<<31) && v < 1<<32 {
-				val = append(val, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
-			} else {
-				val = append(val, byte(v), byte(v>>8), byte(v>>16), byte(v>>24), byte(v>>32), byte(v>>40), byte(v>>48), byte(v>>56))
-			}
-			lc.lits[Literal{string(val), false}] = struct{}{}
+	}
+}
+
+func (lc *LiteralCollector) addString(s string) {
+	lc.lits[Literal{s, true}] = struct{}{}
+}
+
+func (lc *LiteralCollector) addInt(v constant.Value, signed bool) {
+	var u uint64
+	var ok bool
+	if signed {
+		var i int64
+		i, ok = constant.Int64Val(v)
+		u = uint64(i)
+	} else {
+		u, ok = constant.Uint64Val(v)
+	}
+	if !ok {
+		fmt.Printf("bad int constant (signed=%v) %v\n", signed, v)
+		return
+	}
+
+	b := make([]byte, 8)
+
+	if u < 1<<8 {
+		lc.addBytes([]byte{byte(u)})
+	}
+	if x := uint16(u); uint64(x) == u {
+		binary.LittleEndian.PutUint16(b, x)
+		lc.addBytes(b[:2])
+		binary.BigEndian.PutUint16(b, x)
+		lc.addBytes(b[:2])
+	}
+	if x := uint32(u); uint64(x) == u {
+		binary.LittleEndian.PutUint32(b, x)
+		lc.addBytes(b[:4])
+		binary.BigEndian.PutUint32(b, x)
+		lc.addBytes(b[:4])
+	}
+
+	binary.LittleEndian.PutUint64(b, u)
+	lc.addBytes(b)
+	binary.BigEndian.PutUint64(b, u)
+	lc.addBytes(b)
+
+	// TODO varint
+}
+
+func (lc *LiteralCollector) addBytes(b []byte) {
+	lc.lits[Literal{string(b), false}] = struct{}{}
+}
+
+func (lc *LiteralCollector) addValue(tv types.TypeAndValue) {
+	typ := tv.Type.Underlying()
+	switch typ {
+	case types.Typ[types.Bool], types.Typ[types.UntypedBool]:
+		if constant.BoolVal(tv.Value) {
+			lc.addBytes([]byte{1})
+		} else {
+			lc.addBytes([]byte{0})
 		}
-		return nil
+	case types.Typ[types.Int], types.Typ[types.Int8], types.Typ[types.Int16],
+		types.Typ[types.Int32], types.Typ[types.Int64],
+		types.Universe.Lookup("rune").Type():
+		lc.addInt(tv.Value, true)
+	case types.Typ[types.Uint], types.Typ[types.Uint8], types.Typ[types.Uint16],
+		types.Typ[types.Uint32], types.Typ[types.Uint64], types.Typ[types.Uintptr],
+		types.Universe.Lookup("byte").Type():
+		lc.addInt(tv.Value, false)
+	case types.Typ[types.UntypedInt], types.Typ[types.UntypedRune]:
+		lc.addInt(tv.Value, false)
+		lc.addInt(tv.Value, true)
+	case types.Typ[types.Float32], types.Typ[types.Float64], types.Typ[types.UntypedFloat],
+		types.Typ[types.Complex64], types.Typ[types.Complex128], types.Typ[types.UntypedComplex]:
+		// TODO: what?
+	case types.Typ[types.String], types.Typ[types.UntypedString]:
+		lc.addString(constant.StringVal(tv.Value))
+	case types.Typ[types.UnsafePointer], types.Typ[types.UntypedNil]:
+		// no-op
+	default:
+		fmt.Printf("unknown typ %v (%v)\n", tv.Type, typ)
 	}
 }
 
