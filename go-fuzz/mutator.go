@@ -4,12 +4,11 @@
 package main
 
 import (
-	"math/bits"
+	"encoding/binary"
 	"math/rand"
 	"sort"
 	"strconv"
 	"time"
-	"unsafe"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
 )
@@ -24,6 +23,17 @@ func newMutator() *Mutator {
 
 func (m *Mutator) rand(n int) int {
 	return m.r.Intn(n)
+}
+
+func (m *Mutator) randbool() bool {
+	return m.r.Int63()&1 == 0
+}
+
+func (m *Mutator) randByteOrder() binary.ByteOrder {
+	if m.randbool() {
+		return binary.LittleEndian
+	}
+	return binary.BigEndian
 }
 
 func (m *Mutator) generate(ro *ROData) ([]byte, int) {
@@ -141,7 +151,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 			pos := m.rand(len(res))
 			v := byte(m.rand(35) + 1)
-			if m.rand(2) == 0 {
+			if m.randbool() {
 				res[pos] += v
 			} else {
 				res[pos] -= v
@@ -152,60 +162,39 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - 1)
+			buf := res[m.rand(len(res)-1):]
 			v := uint16(m.rand(35) + 1)
-			switch m.rand(4) {
-			case 0:
-				*(*uint16)(unsafe.Pointer(&res[pos])) += v
-			case 1:
-				*(*uint16)(unsafe.Pointer(&res[pos])) -= v
-			case 2:
-				x := *(*uint16)(unsafe.Pointer(&res[pos]))
-				*(*uint16)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes16(bits.ReverseBytes16(x) + v)
-			case 3:
-				x := *(*uint16)(unsafe.Pointer(&res[pos]))
-				*(*uint16)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes16(bits.ReverseBytes16(x) - v)
+			if m.randbool() {
+				v = ^(v - 1) // v *= -1, but for uints
 			}
+			enc := m.randByteOrder()
+			enc.PutUint16(buf, enc.Uint16(buf)+v)
 		case 9:
 			// Add/subtract from a uint32.
 			if len(res) < 4 {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - 3)
+			buf := res[m.rand(len(res)-3):]
 			v := uint32(m.rand(35) + 1)
-			switch m.rand(4) {
-			case 0:
-				*(*uint32)(unsafe.Pointer(&res[pos])) += v
-			case 1:
-				*(*uint32)(unsafe.Pointer(&res[pos])) -= v
-			case 2:
-				x := *(*uint32)(unsafe.Pointer(&res[pos]))
-				*(*uint32)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes32(bits.ReverseBytes32(x) + v)
-			case 3:
-				x := *(*uint32)(unsafe.Pointer(&res[pos]))
-				*(*uint32)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes32(bits.ReverseBytes32(x) - v)
+			if m.randbool() {
+				v = ^(v - 1) // v *= -1, but for uints
 			}
+			enc := m.randByteOrder()
+			enc.PutUint32(buf, enc.Uint32(buf)+v)
 		case 10:
 			// Add/subtract from a uint64.
 			if len(res) < 8 {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - 7)
+			buf := res[m.rand(len(res)-7):]
 			v := uint64(m.rand(35) + 1)
-			switch m.rand(4) {
-			case 0:
-				*(*uint64)(unsafe.Pointer(&res[pos])) += v
-			case 1:
-				*(*uint64)(unsafe.Pointer(&res[pos])) -= v
-			case 2:
-				x := *(*uint64)(unsafe.Pointer(&res[pos]))
-				*(*uint64)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes64(bits.ReverseBytes64(x) + v)
-			case 3:
-				x := *(*uint64)(unsafe.Pointer(&res[pos]))
-				*(*uint64)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes64(bits.ReverseBytes64(x) - v)
+			if m.randbool() {
+				v = ^(v - 1) // v *= -1, but for uints
 			}
+			enc := m.randByteOrder()
+			enc.PutUint64(buf, enc.Uint64(buf)+v)
 		case 11:
 			// Replace a byte with an interesting value.
 			if len(res) == 0 {
@@ -220,24 +209,18 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - 1)
+			buf := res[m.rand(len(res)-1):]
 			v := uint16(interesting16[m.rand(len(interesting16))])
-			if m.rand(2) == 0 {
-				v = bits.ReverseBytes16(v)
-			}
-			*(*uint16)(unsafe.Pointer(&res[pos])) = v
+			m.randByteOrder().PutUint16(buf, v)
 		case 13:
 			// Replace an uint32 with an interesting value.
 			if len(res) < 4 {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - 3)
+			buf := res[m.rand(len(res)-3):]
 			v := uint32(interesting32[m.rand(len(interesting32))])
-			if m.rand(2) == 0 {
-				v = bits.ReverseBytes32(v)
-			}
-			*(*uint32)(unsafe.Pointer(&res[pos])) = v
+			m.randByteOrder().PutUint32(buf, v)
 		case 14:
 			// Replace an ascii digit with another digit.
 			var digits []int
