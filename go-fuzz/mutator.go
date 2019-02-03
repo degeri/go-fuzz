@@ -251,7 +251,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 			res[digits[pos]] = now
 		case 15:
-			// Replace an ascii number with another number.
+			// Replace a multi-byte ASCII number with another number.
 			type arange struct {
 				start int
 				end   int
@@ -259,16 +259,19 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			var numbers []arange
 			start := -1
 			for i, v := range res {
-				if v >= '0' && v <= '9' {
+				if (v >= '0' && v <= '9') || (start == -1 && v == '-') {
 					if start == -1 {
 						start = i
+					} else if i == len(res)-1 {
+						// At final byte.
+						if i-start > 0 {
+							numbers = append(numbers, arange{start, i + 1})
+						}
 					}
 				} else {
-					if start != -1 {
-						if i-start > 1 {
-							numbers = append(numbers, arange{start, i})
-							start = -1
-						}
+					if start != -1 && i-start > 1 {
+						numbers = append(numbers, arange{start, i})
+						start = -1
 					}
 				}
 			}
@@ -278,15 +281,16 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 			r := numbers[m.rand(len(numbers))]
 			var v int64
-			switch m.rand(4) {
+			switch m.rand(3) {
 			case 0:
 				v = int64(m.rand(1000))
 			case 1:
 				v = int64(m.rand(1 << 30))
 			case 2:
 				v = int64(m.rand(1<<30)) * int64(m.rand(1<<30))
-			case 3:
-				v = -int64(m.rand(1 << 30))
+			}
+			if m.randbool() {
+				v *= -1
 			}
 			str := strconv.FormatInt(v, 10)
 			tmp := make([]byte, len(res)-(r.end-r.start)+len(str))
