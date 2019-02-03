@@ -345,19 +345,10 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 		case 18:
 			// Insert a literal.
-			// TODO: encode int literals in big-endian, base-128, etc.
-			if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
+			lit := m.pickLiteral(ro)
+			if lit == nil {
 				iter--
 				continue
-			}
-			var lit []byte
-			if len(ro.strLits) != 0 && m.rand(2) == 0 {
-				lit = []byte(ro.strLits[m.rand(len(ro.strLits))])
-			} else {
-				lit = ro.intLits[m.rand(len(ro.intLits))]
-				if m.rand(3) == 0 {
-					lit = reverse(lit)
-				}
 			}
 			pos := m.rand(len(res) + 1)
 			for i := 0; i < len(lit); i++ {
@@ -367,20 +358,8 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			copy(res[pos:], lit)
 		case 19:
 			// Replace with literal.
-			if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
-				iter--
-				continue
-			}
-			var lit []byte
-			if len(ro.strLits) != 0 && m.rand(2) == 0 {
-				lit = []byte(ro.strLits[m.rand(len(ro.strLits))])
-			} else {
-				lit = ro.intLits[m.rand(len(ro.intLits))]
-				if m.rand(3) == 0 {
-					lit = reverse(lit)
-				}
-			}
-			if len(lit) >= len(res) {
+			lit := m.pickLiteral(ro)
+			if lit == nil || len(lit) >= len(res) {
 				iter--
 				continue
 			}
@@ -392,6 +371,23 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		res = res[:MaxInputSize]
 	}
 	return res
+}
+
+func (m *Mutator) pickLiteral(ro *ROData) []byte {
+	// TODO: encode int literals in big-endian, base-128, etc.
+	if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
+		return nil
+	}
+	var lit []byte
+	if len(ro.strLits) != 0 && m.rand(2) == 0 {
+		lit = []byte(ro.strLits[m.rand(len(ro.strLits))])
+	} else {
+		lit = ro.intLits[m.rand(len(ro.intLits))]
+		if m.rand(3) == 0 {
+			lit = reverse(lit)
+		}
+	}
+	return lit
 }
 
 // chooseLen chooses length of range mutation.
