@@ -244,7 +244,12 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				continue
 			}
 			pos := m.rand(len(digits))
-			res[digits[pos]] = byte(m.rand(10)) + '0'
+			was := res[digits[pos]]
+			now := byte(m.rand(10)) + '0'
+			for was == now {
+				now = byte(m.rand(10)) + '0'
+			}
+			res[digits[pos]] = now
 		case 15:
 			// Replace an ascii number with another number.
 			type arange struct {
