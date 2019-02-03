@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/rand"
 	"sort"
@@ -65,7 +66,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 	for m.rand(2) == 0 {
 		nm++
 	}
-	for iter := 0; iter < nm; iter++ {
+	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
 		switch m.rand(20) {
 		case 0:
 			// Remove a range of bytes.
