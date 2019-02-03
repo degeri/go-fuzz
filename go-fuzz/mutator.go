@@ -36,6 +36,16 @@ func (m *Mutator) randByteOrder() binary.ByteOrder {
 	return binary.BigEndian
 }
 
+// randSlice returns a random slice of b, of length n.
+// If b is too short, randSlice returns nil.
+func (m *Mutator) randSlice(b []byte, n int) []byte {
+	if len(b) < n {
+		return nil
+	}
+	off := m.rand(len(b) - n + 1)
+	return b[off : off+n]
+}
+
 func (m *Mutator) generate(ro *ROData) ([]byte, int) {
 	corpus := ro.corpus
 	scoreSum := corpus[len(corpus)-1].runningScoreSum
@@ -158,11 +168,11 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 		case 8:
 			// Add/subtract from a uint16.
-			if len(res) < 2 {
+			buf := m.randSlice(res, 2)
+			if buf == nil {
 				iter--
 				continue
 			}
-			buf := res[m.rand(len(res)-1):]
 			v := uint16(m.rand(35) + 1)
 			if m.randbool() {
 				v = ^(v - 1) // v *= -1, but for uints
@@ -171,11 +181,11 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			enc.PutUint16(buf, enc.Uint16(buf)+v)
 		case 9:
 			// Add/subtract from a uint32.
-			if len(res) < 4 {
+			buf := m.randSlice(res, 4)
+			if buf == nil {
 				iter--
 				continue
 			}
-			buf := res[m.rand(len(res)-3):]
 			v := uint32(m.rand(35) + 1)
 			if m.randbool() {
 				v = ^(v - 1) // v *= -1, but for uints
@@ -184,11 +194,11 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			enc.PutUint32(buf, enc.Uint32(buf)+v)
 		case 10:
 			// Add/subtract from a uint64.
-			if len(res) < 8 {
+			buf := m.randSlice(res, 8)
+			if buf == nil {
 				iter--
 				continue
 			}
-			buf := res[m.rand(len(res)-7):]
 			v := uint64(m.rand(35) + 1)
 			if m.randbool() {
 				v = ^(v - 1) // v *= -1, but for uints
@@ -205,20 +215,20 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			res[pos] = byte(interesting8[m.rand(len(interesting8))])
 		case 12:
 			// Replace an uint16 with an interesting value.
-			if len(res) < 2 {
+			buf := m.randSlice(res, 2)
+			if buf == nil {
 				iter--
 				continue
 			}
-			buf := res[m.rand(len(res)-1):]
 			v := uint16(interesting16[m.rand(len(interesting16))])
 			m.randByteOrder().PutUint16(buf, v)
 		case 13:
 			// Replace an uint32 with an interesting value.
-			if len(res) < 4 {
+			buf := m.randSlice(res, 4)
+			if buf == nil {
 				iter--
 				continue
 			}
-			buf := res[m.rand(len(res)-3):]
 			v := uint32(interesting32[m.rand(len(interesting32))])
 			m.randByteOrder().PutUint32(buf, v)
 		case 14:
