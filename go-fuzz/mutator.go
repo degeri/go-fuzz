@@ -367,7 +367,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		}
 	}
 	if len(res) > MaxInputSize {
-		res = res[:MaxInputSize]
+		res = m.randSlice(res, MaxInputSize)
 	}
 	return res
 }
