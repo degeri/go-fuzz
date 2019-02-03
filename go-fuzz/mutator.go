@@ -4,6 +4,7 @@
 package main
 
 import (
+	"math/bits"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -160,10 +161,10 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				*(*uint16)(unsafe.Pointer(&res[pos])) -= v
 			case 2:
 				x := *(*uint16)(unsafe.Pointer(&res[pos]))
-				*(*uint16)(unsafe.Pointer(&res[pos])) = swap16(swap16(x) + v)
+				*(*uint16)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes16(bits.ReverseBytes16(x) + v)
 			case 3:
 				x := *(*uint16)(unsafe.Pointer(&res[pos]))
-				*(*uint16)(unsafe.Pointer(&res[pos])) = swap16(swap16(x) - v)
+				*(*uint16)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes16(bits.ReverseBytes16(x) - v)
 			}
 		case 9:
 			// Add/subtract from a uint32.
@@ -180,10 +181,10 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				*(*uint32)(unsafe.Pointer(&res[pos])) -= v
 			case 2:
 				x := *(*uint32)(unsafe.Pointer(&res[pos]))
-				*(*uint32)(unsafe.Pointer(&res[pos])) = swap32(swap32(x) + v)
+				*(*uint32)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes32(bits.ReverseBytes32(x) + v)
 			case 3:
 				x := *(*uint32)(unsafe.Pointer(&res[pos]))
-				*(*uint32)(unsafe.Pointer(&res[pos])) = swap32(swap32(x) - v)
+				*(*uint32)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes32(bits.ReverseBytes32(x) - v)
 			}
 		case 10:
 			// Add/subtract from a uint64.
@@ -200,10 +201,10 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				*(*uint64)(unsafe.Pointer(&res[pos])) -= v
 			case 2:
 				x := *(*uint64)(unsafe.Pointer(&res[pos]))
-				*(*uint64)(unsafe.Pointer(&res[pos])) = swap64(swap64(x) + v)
+				*(*uint64)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes64(bits.ReverseBytes64(x) + v)
 			case 3:
 				x := *(*uint64)(unsafe.Pointer(&res[pos]))
-				*(*uint64)(unsafe.Pointer(&res[pos])) = swap64(swap64(x) - v)
+				*(*uint64)(unsafe.Pointer(&res[pos])) = bits.ReverseBytes64(bits.ReverseBytes64(x) - v)
 			}
 		case 11:
 			// Replace a byte with an interesting value.
@@ -222,7 +223,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			pos := m.rand(len(res) - 1)
 			v := uint16(interesting16[m.rand(len(interesting16))])
 			if m.rand(2) == 0 {
-				v = swap16(v)
+				v = bits.ReverseBytes16(v)
 			}
 			*(*uint16)(unsafe.Pointer(&res[pos])) = v
 		case 13:
@@ -234,7 +235,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			pos := m.rand(len(res) - 3)
 			v := uint32(interesting32[m.rand(len(interesting32))])
 			if m.rand(2) == 0 {
-				v = swap32(v)
+				v = bits.ReverseBytes32(v)
 			}
 			*(*uint32)(unsafe.Pointer(&res[pos])) = v
 		case 14:
@@ -408,49 +409,6 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func swap16(v uint16) uint16 {
-	v0 := byte(v >> 0)
-	v1 := byte(v >> 8)
-	v = 0
-	v |= uint16(v1) << 0
-	v |= uint16(v0) << 8
-	return v
-}
-
-func swap32(v uint32) uint32 {
-	v0 := byte(v >> 0)
-	v1 := byte(v >> 8)
-	v2 := byte(v >> 16)
-	v3 := byte(v >> 24)
-	v = 0
-	v |= uint32(v3) << 0
-	v |= uint32(v2) << 8
-	v |= uint32(v1) << 16
-	v |= uint32(v0) << 24
-	return v
-}
-
-func swap64(v uint64) uint64 {
-	v0 := byte(v >> 0)
-	v1 := byte(v >> 8)
-	v2 := byte(v >> 16)
-	v3 := byte(v >> 24)
-	v4 := byte(v >> 32)
-	v5 := byte(v >> 40)
-	v6 := byte(v >> 48)
-	v7 := byte(v >> 56)
-	v = 0
-	v |= uint64(v7) << 0
-	v |= uint64(v6) << 8
-	v |= uint64(v5) << 16
-	v |= uint64(v4) << 24
-	v |= uint64(v3) << 32
-	v |= uint64(v2) << 40
-	v |= uint64(v1) << 48
-	v |= uint64(v0) << 56
-	return v
 }
 
 var (
