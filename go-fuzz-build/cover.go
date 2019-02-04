@@ -444,7 +444,6 @@ func (lc *LiteralCollector) addInt(v constant.Value, signed bool) {
 		u, ok = constant.Uint64Val(v)
 	}
 	if !ok {
-		fmt.Printf("bad int constant (signed=%v) %v\n", signed, v)
 		return
 	}
 
