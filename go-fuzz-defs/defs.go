@@ -44,7 +44,10 @@ type Literal struct {
 }
 
 type MetaData struct {
-	Literals []Literal
-	Blocks   []CoverBlock
-	Sonar    []CoverBlock
+	Literals struct {
+		Strings []string
+		Ints    []string // TODO: uint64, turn into bytes on the other end
+	}
+	Blocks []CoverBlock
+	Sonar  []CoverBlock
 }

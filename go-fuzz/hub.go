@@ -106,12 +106,13 @@ func newHub(metadata MetaData) *Hub {
 		sonarSites:   sonarSites,
 	}
 	// Prepare list of string and integer literals.
-	for _, lit := range metadata.Literals {
-		if lit.IsStr {
-			ro.strLits = append(ro.strLits, []byte(lit.Val))
-		} else {
-			ro.intLits = append(ro.intLits, []byte(lit.Val))
-		}
+	for _, lit := range metadata.Literals.Strings {
+		// TODO: convert to bytes on the fly instead?
+		ro.strLits = append(ro.strLits, []byte(lit))
+	}
+	for _, lit := range metadata.Literals.Ints {
+		// TODO: convert to bytes on the fly instead
+		ro.intLits = append(ro.intLits, []byte(lit))
 	}
 	hub.ro.Store(ro)
 

@@ -166,7 +166,11 @@ func testNormalBuild(pkg string) {
 func createMeta(lits map[Literal]struct{}, blocks []CoverBlock, sonar []CoverBlock) string {
 	meta := MetaData{Blocks: blocks, Sonar: sonar}
 	for k := range lits {
-		meta.Literals = append(meta.Literals, k)
+		if k.IsStr {
+			meta.Literals.Strings = append(meta.Literals.Strings, k.Val)
+		} else {
+			meta.Literals.Ints = append(meta.Literals.Ints, k.Val)
+		}
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {

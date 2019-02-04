@@ -6,20 +6,31 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
+	"github.com/dvyukov/go-fuzz/go-fuzz/internal/substr"
 )
 
 type Mutator struct {
-	r *rand.Rand
+	r  *rand.Rand
+	ro *ROData
+	sc *substr.Corpus
 }
 
-func newMutator() *Mutator {
-	return &Mutator{r: rand.New(rand.NewSource(time.Now().UnixNano()))}
+func newMutator(metadata MetaData) *Mutator {
+	m := new(Mutator)
+	m.r = rand.New(rand.NewSource(time.Now().UnixNano())) // TODO: use crypto/rand.Reader instead? These get spawned really close to each other.
+	corpus := make([]string, 0, len(metadata.Literals.Strings)+len(metadata.Literals.Ints))
+	corpus = append(corpus, metadata.Literals.Strings...)
+	corpus = append(corpus, metadata.Literals.Ints...)
+	m.sc = substr.NewCorpus(m.r, corpus) // TODO: ints too? variants on strings like NUL term, length prefix?
+	return m
 }
 
 func (m *Mutator) rand(n int) int {
@@ -67,7 +78,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		nm++
 	}
 	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
-		switch m.rand(20) {
+		switch m.rand(21) {
 		case 0:
 			// Remove a range of bytes.
 			if len(res) <= 1 {
@@ -369,6 +380,29 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 			pos := m.rand(len(res) - len(lit))
 			copy(res[pos:], lit)
+		case 20:
+			r := string(res)
+			lit := m.sc.Pick(r) // TODO: change pick signature, rationalize with the rest of corpus construction
+			if lit == "" {
+				iter--
+				continue
+			}
+			// swap only one incidence
+			// TODO: swap all, swap a random subset
+			// TODO: write and use a generic splice function
+			i := strings.Index(r, lit)
+			if i < 0 {
+				panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
+			}
+			// TODO: loop until the replacement is different than the original
+			// TODO: pick only a like kind literal (string for string, int for int, etc.)
+			replace := m.pickLiteral(ro)
+			tmp := make([]byte, len(res)-len(lit)+len(replace))
+			copy(tmp, res[:i])
+			copy(tmp[i:], replace)
+			copy(tmp[i+len(replace):], res[i+len(lit):])
+			res = tmp
+			// fmt.Printf("REPLACED LITERAL %q with %q\n", lit, string(replace))
 		}
 		// Ideas for more mutations:
 		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
@@ -386,6 +420,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 func (m *Mutator) pickLiteral(ro *ROData) []byte {
 	// TODO: encode int literals in big-endian, base-128, ascii, etc.
 	// TODO: other kinds of literals
+	// TODO: encode strings with length prefix and with trailing NUL
 	if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
 		return nil
 	}

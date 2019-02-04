@@ -124,7 +124,7 @@ func workerMain() {
 		s := &Worker{
 			id:      i,
 			hub:     hub,
-			mutator: newMutator(),
+			mutator: newMutator(metadata),
 		}
 		s.coverBin = newTestBinary(coverBin, s.periodicCheck, &s.stats)
 		s.sonarBin = newTestBinary(sonarBin, s.periodicCheck, &s.stats)
