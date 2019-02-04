@@ -4,7 +4,7 @@
 package base
 
 const (
-	CoverSize       = 64 << 10
+	CoverSize       = 64 << 14
 	MaxInputSize    = 1 << 20
 	SonarRegionSize = 1 << 20
 )
