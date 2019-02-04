@@ -370,6 +370,12 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			pos := m.rand(len(res) - len(lit))
 			copy(res[pos:], lit)
 		}
+		// Ideas for more mutations:
+		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
+		// search and replace a literal with another literal! either replace all or replace one or replace random subset.
+		// Swap case of ascii letters?
+		// lowercase run of ascii letters?
+		// uppercase run of ascii letters?
 	}
 	if len(res) > MaxInputSize {
 		res = m.randSlice(res, MaxInputSize)
@@ -378,7 +384,8 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 }
 
 func (m *Mutator) pickLiteral(ro *ROData) []byte {
-	// TODO: encode int literals in big-endian, base-128, etc.
+	// TODO: encode int literals in big-endian, base-128, ascii, etc.
+	// TODO: other kinds of literals
 	if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
 		return nil
 	}
