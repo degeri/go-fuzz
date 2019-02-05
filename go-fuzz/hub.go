@@ -105,6 +105,7 @@ func newHub(metadata MetaData) *Hub {
 		coverBlocks:  coverBlocks,
 		sonarSites:   sonarSites,
 	}
+	// TODO: package to convert list of strings to contiguous (in memory) byte slices, for locality?
 	// Prepare list of string and integer literals.
 	for _, lit := range metadata.Literals.Strings {
 		// TODO: convert to bytes on the fly instead?
