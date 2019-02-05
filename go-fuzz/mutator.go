@@ -366,20 +366,21 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				continue
 			}
 			pos := m.rand(len(res) + 1)
-			for i := 0; i < len(lit); i++ {
-				res = append(res, 0)
+			if pos == len(res)+1 {
+				// TODO: make splice handle this case?
+				res = append(res, lit...)
+			} else {
+				res = splice(res, pos, 0, lit)
 			}
-			copy(res[pos+len(lit):], res[pos:])
-			copy(res[pos:], lit)
 		case 19:
-			// Replace with literal.
+			// Replace random bytes with literal.
 			lit := m.pickLiteral(ro)
 			if lit == nil || len(lit) >= len(res) {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res) - len(lit))
-			copy(res[pos:], lit)
+			buf := m.randSlice(res, len(lit))
+			copy(buf, lit)
 		case 20:
 			r := string(res)
 			lit := m.sc.Pick(r) // TODO: change pick signature, rationalize with the rest of corpus construction
@@ -390,19 +391,31 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			// swap only one incidence
 			// TODO: swap all, swap a random subset
 			// TODO: write and use a generic splice function
-			i := strings.Index(r, lit)
-			if i < 0 {
-				panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
-			}
 			// TODO: loop until the replacement is different than the original
 			// TODO: pick only a like kind literal (string for string, int for int, etc.)
 			replace := m.pickLiteral(ro)
-			tmp := make([]byte, len(res)-len(lit)+len(replace))
-			copy(tmp, res[:i])
-			copy(tmp[i:], replace)
-			copy(tmp[i+len(replace):], res[i+len(lit):])
-			res = tmp
-			// fmt.Printf("REPLACED LITERAL %q with %q\n", lit, string(replace))
+			switch m.rand(3) {
+			case 0:
+				// replace the first instance
+				i := strings.Index(r, lit)
+				if i < 0 {
+					panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
+				}
+				res = splice(res, i, len(lit), replace)
+			case 1:
+				// replace the last instance
+				i := strings.LastIndex(r, lit)
+				if i < 0 {
+					panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
+				}
+				res = splice(res, i, len(lit), replace)
+			case 2:
+				// replace all instances
+				res = bytes.Replace(res, []byte(lit), replace, -1)
+				// TODO
+				// replace a random instance
+				// replace multiple random instances
+			}
 		}
 		// Ideas for more mutations:
 		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
@@ -454,6 +467,32 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// splice replaces s[start:start+n] with r.
+// It might modify s in the process.
+// TODO: write some tests of this!
+func splice(s []byte, start, n int, r []byte) []byte {
+	if len(r) == n {
+		// Easy case: overwrite the relevant bytes.
+		copy(s[start:], r)
+		return s
+	}
+	newlen := len(s) - n + len(r)
+	if newlen <= cap(s) {
+		// The new output will fit in s; re-use it.
+		tail := s[start+n:] // calculate tail before re-slicing s
+		s = s[:newlen]
+		copy(s[start:], r)
+		copy(s[start+len(r):], tail)
+		return s
+	}
+	// The new output doesn't fit. Construct a new slice.
+	t := make([]byte, newlen)
+	copy(t, s[:start])
+	copy(t[start:], r)
+	copy(t[start+len(r):], s[start+n:])
+	return t
 }
 
 var (
