@@ -93,7 +93,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		nm++
 	}
 	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
-		switch m.rand(21) {
+		switch m.rand(22) {
 		case 0:
 			// Remove a range of bytes.
 			if len(res) <= 1 {
@@ -480,6 +480,22 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				}
 				res = tmp
 			}
+		case 21:
+			// Append another input wholesale.
+			// TODO: this probably leads to overlong inputs. remove?
+			// Insert a part of another input.
+			if len(res) < 1 || len(corpus) < 2 {
+				iter--
+				continue
+			}
+			other := corpus[m.rand(len(corpus))].data
+			// TODO: does this do the right thing when res has already been replaced?
+			// TODO: maybe shouldn't bother, doesn't hurt to append self to self.
+			if len(other) < 1 || &res[0] == &other[0] {
+				iter--
+				continue
+			}
+			res = append(res, other...)
 		}
 		// Ideas for more mutations:
 		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
