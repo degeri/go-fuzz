@@ -153,13 +153,19 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			}
 			copy(res[dst:], res[src:src+n])
 		case 4:
-			// Bit flip. Spooky!
+			// Bit flip(s). Spooky!
 			if len(res) == 0 {
 				iter--
 				continue
 			}
-			pos := m.rand(len(res))
-			res[pos] ^= 1 << uint(m.rand(8))
+			nflips := 1
+			for m.randbool() {
+				nflips++
+			}
+			for i := 0; i < nflips; i++ {
+				pos := m.rand(len(res))
+				res[pos] ^= 1 << uint(m.rand(8))
+			}
 		case 5:
 			// Set a byte to a random value.
 			if len(res) == 0 {
