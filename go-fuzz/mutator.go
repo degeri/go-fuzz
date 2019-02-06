@@ -358,6 +358,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				continue
 			}
 			copy(res[idx0:idx0+m.rand(diff-2)+1], other[idx0:])
+			// TODO: use our splice routine to do more generic splicing, instead of just a half-and-half.
 		case 17:
 			// Insert a part of another input.
 			if len(res) < 4 || len(corpus) < 2 {
