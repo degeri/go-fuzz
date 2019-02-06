@@ -51,6 +51,7 @@ func (m *Mutator) randByteOrder() binary.ByteOrder {
 // randSlice returns a random slice of b, of length n.
 // If b is too short, randSlice returns nil.
 func (m *Mutator) randSlice(b []byte, n int) []byte {
+	// TODO: bias towards literal boundaries? NULs? etc.
 	if len(b) < n {
 		return nil
 	}
@@ -68,6 +69,20 @@ func (m *Mutator) generate(ro *ROData) ([]byte, int) {
 	input := &corpus[idx]
 	return m.mutate(input.data, ro), input.depth + 1
 }
+
+// TODO: restructure mutate
+// Outline:
+// Each mutation routine should be a separate function that takes params as needed.
+// Any given mutation routine should be fully deterministic.
+// This allows testability.
+// This will also allow us to measure which mutations are (in)effective,
+// and ultimately to skew our mutation efforts towards mutations that are effective
+// for this particular corpus and Fuzz function.
+// Some params really are random, like where to increment an int.
+// That's fine; those can be populated after the top level dispatch.
+// (It might even be interesting to learn, though, things like
+// whether it is more beneficial to be near the beginning or the middle or the end,
+// or whether there are fixed-length entries, or what.)
 
 func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 	corpus := ro.corpus
