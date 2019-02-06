@@ -391,10 +391,20 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			// swap only one incidence
 			// TODO: swap all, swap a random subset
 			// TODO: write and use a generic splice function
-			// TODO: loop until the replacement is different than the original
 			// TODO: pick only a like kind literal (string for string, int for int, etc.)
 			replace := m.pickLiteral(ro)
-			switch m.rand(3) {
+			// loop until the replacement is different than the original
+			for string(replace) == lit {
+				replace = m.pickLiteral(ro)
+			}
+
+			// TODO: restructure
+			// maybe: count number of instances
+			// if 1 replace it, and done.
+			// if not one, do as below?
+			// maybe not emphasize first/last so much??
+
+			switch m.rand(5) {
 			case 0:
 				// replace the first instance
 				i := strings.Index(r, lit)
@@ -412,9 +422,41 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			case 2:
 				// replace all instances
 				res = bytes.Replace(res, []byte(lit), replace, -1)
-				// TODO
-				// replace a random instance
-				// replace multiple random instances
+			case 3:
+				// replace a random instance:
+				// pick a random offset, find the first instance before/after that offset, replace it.
+				pos := m.rand(len(res))
+				i := strings.Index(r[pos:], lit)
+				if i < 0 {
+					i = strings.LastIndex(r[:pos], lit)
+					if i < 0 {
+						// we must be in the middle of the only instance of lit!
+						// do a replace all, since that is simple to implement.
+						// TODO: restructure all of this for unity?
+						res = bytes.Replace(res, []byte(lit), replace, -1)
+						break
+					}
+				} else {
+					i += pos
+				}
+				res = splice(res, i, len(lit), replace)
+			case 4:
+				// replace random instances with probably 1/2 for each
+				// TODO: pick different lits for each replacement?
+				var tmp []byte
+				fields := strings.Split(r, lit)
+				for i, field := range fields {
+					if i == len(fields)-1 {
+						break
+					}
+					tmp = append(tmp, field...)
+					if m.randbool() {
+						tmp = append(tmp, lit...)
+					} else {
+						tmp = append(tmp, replace...)
+					}
+				}
+				res = tmp
 			}
 		}
 		// Ideas for more mutations:
@@ -451,6 +493,7 @@ func (m *Mutator) pickLiteral(ro *ROData) []byte {
 
 // chooseLen chooses length of range mutation.
 // It gives preference to shorter ranges.
+// TODO: Zipf instead? Examine distribution.
 func (m *Mutator) chooseLen(n int) int {
 	switch x := m.rand(100); {
 	case x < 90:
