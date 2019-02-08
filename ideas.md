@@ -43,3 +43,7 @@ idea: track whence each corpus entry (manual, sonar, verse, mutation), see wheth
 
 
 
+---
+
+make initial startup faster by doing less work on existing corpus entries?
+
