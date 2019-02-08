@@ -83,6 +83,7 @@ func (m *Mutator) generate(ro *ROData) ([]byte, int) {
 // (It might even be interesting to learn, though, things like
 // whether it is more beneficial to be near the beginning or the middle or the end,
 // or whether there are fixed-length entries, or what.)
+// TODO: when we restructure the for loop, make it so that we automatically do iter-- if bytes.Equal.
 
 func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 	corpus := ro.corpus
@@ -93,7 +94,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		nm++
 	}
 	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
-		switch m.rand(22) {
+		switch m.rand(21) {
 		case 0:
 			// Remove a range of bytes.
 			if len(res) <= 1 {
@@ -481,6 +482,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				res = tmp
 			}
 		case 21:
+			panic("disabled -- leads to overlong inputs")
 			// Append another input wholesale.
 			// TODO: this probably leads to overlong inputs. remove?
 			// Insert a part of another input.
