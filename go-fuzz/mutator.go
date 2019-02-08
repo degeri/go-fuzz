@@ -5,8 +5,11 @@ package main
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/lzw"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -94,7 +97,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 		nm++
 	}
 	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
-		switch m.rand(21) {
+		switch m.rand(23) {
 		case 0:
 			// Remove a range of bytes.
 			if len(res) <= 1 {
@@ -482,22 +485,57 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				res = tmp
 			}
 		case 21:
-			panic("disabled -- leads to overlong inputs")
-			// Append another input wholesale.
-			// TODO: this probably leads to overlong inputs. remove?
-			// Insert a part of another input.
-			if len(res) < 1 || len(corpus) < 2 {
-				iter--
-				continue
+			buf := new(bytes.Buffer)
+			order := lzw.LSB
+			if m.randbool() {
+				order = lzw.MSB
 			}
-			other := corpus[m.rand(len(corpus))].data
-			// TODO: does this do the right thing when res has already been replaced?
-			// TODO: maybe shouldn't bother, doesn't hurt to append self to self.
-			if len(other) < 1 || &res[0] == &other[0] {
-				iter--
-				continue
+			w := lzw.NewWriter(buf, order, 8)
+			_, err := io.Copy(w, bytes.NewReader(res))
+			if err != nil {
+				panic(err)
 			}
-			res = append(res, other...)
+			err = w.Close()
+			if err != nil {
+				panic(err)
+			}
+			b := buf.Bytes()
+			b[rand.Intn(len(b))] ^= 1 << uint(rand.Intn(8))
+			r := lzw.NewReader(bytes.NewReader(b), order, 8)
+			// intentionally ignore err from this copy: we've corrupted the stream, so it is probably broken.
+			buf2 := new(bytes.Buffer)
+			_, _ = io.Copy(buf2, r)
+			r.Close()
+			res = buf2.Bytes()
+		case 22:
+			buf := new(bytes.Buffer)
+			level := m.rand(11) - 2 // range: -2 .. 9
+			// NoCompression      = 0
+			// BestSpeed          = 1
+			// BestCompression    = 9
+			// DefaultCompression = -1
+			// HuffmanOnly = -2
+			w, err := flate.NewWriter(buf, level)
+			if err != nil {
+				panic(err)
+			}
+			_, err = io.Copy(w, bytes.NewReader(res))
+			if err != nil {
+				panic(err)
+			}
+			err = w.Flush()
+			if err != nil {
+				panic(err)
+			}
+			b := buf.Bytes()
+			// TODO: prefer to flip a bit near the beginning?
+			b[rand.Intn(len(b))] ^= 1 << uint(rand.Intn(8))
+			r := flate.NewReader(bytes.NewReader(b))
+			// intentionally ignore err from this copy: we've corrupted the stream, so it is probably broken.
+			buf2 := new(bytes.Buffer)
+			_, _ = io.Copy(buf2, r)
+			r.Close()
+			res = buf2.Bytes()
 		}
 		// Ideas for more mutations:
 		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
