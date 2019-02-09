@@ -4,7 +4,7 @@
 TEXT ·compareCoverBody1(SB), NOSPLIT, $0-17
 	MOVQ	base+0(FP), SI
 	MOVQ	cur+8(FP), DI
-	MOVQ	$1048575, AX	// loop counter (CoverSize)
+	MOVQ	$65535, AX	// loop counter (CoverSize)
 	MOVQ	$0, R10		// ret
 	BYTE	$0x90		// nop
 	BYTE	$0x90
