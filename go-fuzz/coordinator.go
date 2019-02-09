@@ -305,7 +305,7 @@ type SyncRes struct {
 	Inputs []CoordinatorInput // new interesting inputs
 }
 
-var errUnkownWorker = errors.New("unknown worker")
+var errUnknownWorker = errors.New("unknown worker")
 
 // Sync is a periodic sync with a worker.
 // Worker sends statistics. Coordinator returns new inputs.
@@ -315,7 +315,7 @@ func (c *Coordinator) Sync(a *SyncArgs, r *SyncRes) error {
 
 	w := c.workers[a.ID]
 	if w == nil {
-		return errUnkownWorker
+		return errUnknownWorker
 	}
 	c.statExecs += a.Execs
 	c.statRestarts += a.Restarts
