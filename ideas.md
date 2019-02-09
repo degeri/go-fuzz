@@ -47,3 +47,8 @@ idea: track whence each corpus entry (manual, sonar, verse, mutation), see wheth
 
 make initial startup faster by doing less work on existing corpus entries?
 
+---
+
+anecdotally, new corpus entries get found faster shortly after initial triage is complete.
+then it slows down. is this accurate? if so, why??
+
