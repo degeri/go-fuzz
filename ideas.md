@@ -41,7 +41,7 @@ inspect to find new mutations, sonar, etc.
 
 idea: track whence each corpus entry (manual, sonar, verse, mutation), see whether the optimal source changes over time
 
-
+ignore stringer literals (or recognize them and bust them apart?)
 
 ---
 
