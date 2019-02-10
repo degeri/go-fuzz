@@ -51,11 +51,11 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	var prof interface{ Stop() }
 	if *flagCPUProfile {
 		prof = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
 	}
-	flag.Parse()
 	if *flagCoordinator != "" && *flagWorker != "" {
 		log.Fatalf("both -coordinator and -worker are specified")
 	}
