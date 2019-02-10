@@ -38,7 +38,9 @@ var (
 	flagSonar         = flag.Bool("sonar", true, "use sonar hints")
 	flagV             = flag.Int("v", 0, "verbosity level")
 	flagHTTP          = flag.String("http", "", "HTTP server listen address (coordinator mode only)")
+	flagTTL           = flag.Duration("ttl", 0, "time to fuzz after initial triage complete")
 
+	requestShutdown = make(chan struct{}, 1)
 	shutdown        uint32
 	shutdownC       = make(chan struct{})
 	shutdownCleanup []func()
@@ -56,7 +58,10 @@ func main() {
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, syscall.SIGINT)
-		<-c
+		select {
+		case <-c:
+		case <-requestShutdown:
+		}
 		atomic.StoreUint32(&shutdown, 1)
 		close(shutdownC)
 		log.Printf("shutting down...")

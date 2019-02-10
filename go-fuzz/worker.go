@@ -134,8 +134,6 @@ func workerMain() {
 
 func (w *Worker) loop() {
 	iter, fuzzSonarIter, versifierSonarIter := 0, 0, 0
-	var initialTriageLogger bool // are we the worker that will log when initial triage is complete?
-	var initialTriageLogged bool // have we logged that initial triage is complete?
 	for atomic.LoadUint32(&shutdown) == 0 {
 		if len(w.crasherQueue) > 0 {
 			n := len(w.crasherQueue) - 1
@@ -157,15 +155,7 @@ func (w *Worker) loop() {
 			w.triageInput(input)
 			for {
 				x := atomic.LoadUint32(&w.hub.initialTriage)
-				if x == 0 {
-					break
-				}
-				if atomic.CompareAndSwapUint32(&w.hub.initialTriage, x, x-1) {
-					if x == 1 {
-						// Transitioned to zero initial triage entries.
-						// Anoint ourselves the triage logger.
-						initialTriageLogger = true
-					}
+				if x == 0 || atomic.CompareAndSwapUint32(&w.hub.initialTriage, x, x-1) {
 					break
 				}
 			}
@@ -180,11 +170,6 @@ func (w *Worker) loop() {
 			// and thus unnecessary inflate corpus on every run.
 			time.Sleep(100 * time.Millisecond)
 			continue
-		}
-
-		if initialTriageLogger && !initialTriageLogged {
-			log.Printf("initial triage complete")
-			initialTriageLogged = true
 		}
 
 		if len(w.triageQueue) > 0 {

@@ -144,7 +144,9 @@ func (hub *Hub) loop() {
 	var triageC chan CoordinatorInput
 	var triageInput CoordinatorInput
 
+	initialTriage := true
 	syncTicker := time.NewTicker(syncPeriod).C
+	var ttlTimer <-chan time.Time
 	for {
 		if len(hub.triageQueue) > 0 && triageC == nil {
 			n := len(hub.triageQueue) - 1
@@ -152,6 +154,13 @@ func (hub *Hub) loop() {
 			hub.triageQueue[n] = CoordinatorInput{}
 			hub.triageQueue = hub.triageQueue[:n]
 			triageC = hub.triageC
+		}
+		if initialTriage && atomic.LoadUint32(&hub.initialTriage) == 0 {
+			log.Printf("initial triage completed")
+			initialTriage = false
+			if *flagTTL > 0 {
+				ttlTimer = time.NewTimer(*flagTTL).C
+			}
 		}
 
 		select {
@@ -282,6 +291,10 @@ func (hub *Hub) loop() {
 			if err := hub.coordinator.Call("Coordinator.NewCrasher", crash, nil); err != nil {
 				log.Printf("new crasher call failed: %v", err)
 			}
+
+		case <-ttlTimer:
+			log.Printf("TTL elapsed")
+			requestShutdown <- struct{}{}
 		}
 	}
 }
