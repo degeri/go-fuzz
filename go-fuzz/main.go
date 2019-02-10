@@ -50,9 +50,9 @@ var (
 )
 
 func main() {
-	var prof interface{ Stop }
+	var prof interface{ Stop() }
 	if *flagCPUProfile {
-		p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		prof = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
 	}
 	flag.Parse()
 	if *flagCoordinator != "" && *flagWorker != "" {
@@ -76,8 +76,8 @@ func main() {
 		for _, f := range shutdownCleanup {
 			f()
 		}
-		if p != nil {
-			p.Stop()
+		if prof != nil {
+			prof.Stop()
 		}
 		os.Exit(0)
 	}()
