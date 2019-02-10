@@ -56,3 +56,8 @@ func setupCommMapping(cmd *exec.Cmd, comm *Mapping, rOut, wIn *os.File) {
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GO_FUZZ_IN_FD=%v", rOut.Fd()))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GO_FUZZ_OUT_FD=%v", wIn.Fd()))
 }
+
+func CPUTime() int64 {
+	// TODO: implement
+	return 0
+}

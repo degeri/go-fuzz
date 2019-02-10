@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func lowerProcessPrio() {
@@ -40,4 +42,13 @@ func setupCommMapping(cmd *exec.Cmd, comm *Mapping, rOut, wIn *os.File) {
 	cmd.ExtraFiles = append(cmd.ExtraFiles, comm.f)
 	cmd.ExtraFiles = append(cmd.ExtraFiles, rOut)
 	cmd.ExtraFiles = append(cmd.ExtraFiles, wIn)
+}
+
+func CPUTime() int64 {
+	var t unix.Timespec
+	err := unix.ClockGettime(unix.CLOCK_PROCESS_CPUTIME_ID, &t)
+	if err != nil {
+		return 0
+	}
+	return t.Nano()
 }

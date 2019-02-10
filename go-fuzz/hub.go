@@ -50,6 +50,7 @@ type Hub struct {
 	syncC       chan Stats
 
 	stats         Stats
+	CPUTimeStart  int64
 	corpusOrigins [execCount]uint64
 }
 
@@ -73,11 +74,12 @@ type Stats struct {
 func newHub(metadata MetaData) *Hub {
 	procs := *flagProcs
 	hub := &Hub{
-		corpusSigs:  make(map[Sig]struct{}),
-		triageC:     make(chan CoordinatorInput, procs),
-		newInputC:   make(chan Input, procs),
-		newCrasherC: make(chan NewCrasherArgs, procs),
-		syncC:       make(chan Stats, procs),
+		corpusSigs:   make(map[Sig]struct{}),
+		triageC:      make(chan CoordinatorInput, procs),
+		newInputC:    make(chan Input, procs),
+		newCrasherC:  make(chan NewCrasherArgs, procs),
+		syncC:        make(chan Stats, procs),
+		CPUTimeStart: CPUTime(),
 	}
 
 	if err := hub.connect(); err != nil {
@@ -175,12 +177,15 @@ func (hub *Hub) loop() {
 					hub.corpusOrigins[execVersifier], hub.corpusOrigins[execSmash],
 					hub.corpusOrigins[execSonarHint])
 			}
+			cpunow := CPUTime()
 			args := &SyncArgs{
 				ID:            hub.id,
 				Execs:         hub.stats.execs,
 				Restarts:      hub.stats.restarts,
 				CoverFullness: hub.corpusCoverSize,
+				CPUElapsed:    cpunow - hub.CPUTimeStart,
 			}
+			hub.CPUTimeStart = cpunow
 			hub.stats.execs = 0
 			hub.stats.restarts = 0
 			var res SyncRes

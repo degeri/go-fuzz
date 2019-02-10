@@ -31,11 +31,12 @@ type Coordinator struct {
 	suppressions *PersistentSet
 	crashers     *PersistentSet
 
-	startTime     time.Time
-	lastInput     time.Time
-	statExecs     uint64
-	statRestarts  uint64
-	coverFullness int
+	startTime      time.Time
+	lastInput      time.Time
+	statExecs      uint64
+	statRestarts   uint64
+	statCPUElapsed int64
+	coverFullness  int
 
 	statsWriters *writerset.WriterSet
 }
@@ -149,6 +150,7 @@ func (c *Coordinator) coordinatorStats() coordinatorStats {
 		LastNewInputTime: c.lastInput,
 		Execs:            c.statExecs,
 		Cover:            uint64(c.coverFullness),
+		CPUElapsed:       fmtDuration(time.Duration(c.statCPUElapsed)),
 	}
 
 	// Print stats line.
@@ -166,14 +168,15 @@ func (c *Coordinator) coordinatorStats() coordinatorStats {
 type coordinatorStats struct {
 	Workers, Corpus, Crashers, Execs, Cover, RestartsDenom uint64
 	LastNewInputTime, StartTime                            time.Time
-	Uptime                                                 string
+	Uptime, CPUElapsed                                     string
 }
 
 func (s coordinatorStats) String() string {
 	return fmt.Sprintf("workers: %v, corpus: %v (%v ago), crashers: %v,"+
-		" restarts: 1/%v, execs: %v (%.0f/sec), cover: %v, uptime: %v",
+		" restarts: 1/%v, execs: %v (%.0f/sec), cover: %v, cpu time: %v, uptime: %v",
 		s.Workers, s.Corpus, fmtDuration(time.Since(s.LastNewInputTime)),
 		s.Crashers, s.RestartsDenom, s.Execs, s.ExecsPerSec(), s.Cover,
+		s.CPUElapsed,
 		s.Uptime,
 	)
 }
@@ -302,6 +305,7 @@ type SyncArgs struct {
 	Execs         uint64
 	Restarts      uint64
 	CoverFullness int
+	CPUElapsed    int64 // nanoseconds of user CPU time (not wall time) used by this worker process since last check-in
 }
 
 type SyncRes struct {
@@ -325,6 +329,7 @@ func (c *Coordinator) Sync(a *SyncArgs, r *SyncRes) error {
 	if c.coverFullness < a.CoverFullness {
 		c.coverFullness = a.CoverFullness
 	}
+	c.statCPUElapsed += a.CPUElapsed
 	w.lastSync = time.Now()
 	r.Inputs = w.pending
 	w.pending = nil

@@ -34,6 +34,10 @@
             <span class="text-muted">Cover</span>
           </div>
           <div class="col-xs-4 col-sm-1 placeholder">
+            <h4 id="cputime"></h4>
+            <span class="text-muted">CPU Time</span>
+          </div>
+          <div class="col-xs-4 col-sm-1 placeholder">
             <h4 id="uptime"></h4>
             <span class="text-muted">Uptime</span>
           </div>
@@ -50,6 +54,7 @@
                 <th>Restarts</th>
                 <th>Execs</th>
                 <th>Cover</th>
+                <th>CPU Time</th>
                 <th>Uptime</th>
               </tr>
             </thead>
@@ -104,7 +109,7 @@ if (!String.prototype.format) {
 	};
 }
 
-var rowFmt = "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td>{5}</td><td>{6}</td></tr>"
+var rowFmt = "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td>{5}</td><td>{6}</td><td>{7}</td></tr>"
 
 var evtSource = new EventSource("/eventsource");
 evtSource.addEventListener("ping", function(e) {
@@ -116,6 +121,7 @@ evtSource.addEventListener("ping", function(e) {
 		"1/" + data.RestartsDenom,
 		data.Execs,
 		data.Cover,
+		data.CPUElapsed,
 		data.Uptime
 	));
 
@@ -125,6 +131,7 @@ evtSource.addEventListener("ping", function(e) {
 	$("#restarts").text("1/" + data.RestartsDenom)
 	$("#execs").text(data.Execs)
 	$("#cover").text(data.Cover)
+	$("#cputime").text(data.CPUElapsed)
 	$("#uptime").text(data.Uptime)
 });
 
