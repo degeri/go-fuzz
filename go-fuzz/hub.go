@@ -407,9 +407,6 @@ func (hub *Hub) updateScores() {
 			if c != ro.corpusCover[i] {
 				continue
 			}
-			if c > ro.corpusCover[i] {
-				log.Fatalf("bad")
-			}
 			if candidates[i].score < inp.score {
 				candidates[i].index = idx
 				candidates[i].score = inp.score
