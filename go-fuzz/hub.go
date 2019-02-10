@@ -158,7 +158,6 @@ func (hub *Hub) loop() {
 			triageC = hub.triageC
 		}
 		if initialTriage && atomic.LoadUint32(&hub.initialTriage) == 0 {
-			log.Printf("initial triage completed")
 			initialTriage = false
 			if *flagTTL > 0 {
 				ttlTimer = time.NewTimer(*flagTTL).C
@@ -184,6 +183,7 @@ func (hub *Hub) loop() {
 				Restarts:      hub.stats.restarts,
 				CoverFullness: hub.corpusCoverSize,
 				CPUElapsed:    cpunow - hub.CPUTimeStart,
+				InitialTriage: atomic.LoadUint32(&hub.initialTriage),
 			}
 			hub.CPUTimeStart = cpunow
 			hub.stats.execs = 0

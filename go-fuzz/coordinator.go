@@ -31,12 +31,14 @@ type Coordinator struct {
 	suppressions *PersistentSet
 	crashers     *PersistentSet
 
+	haveStats      bool
 	startTime      time.Time
 	lastInput      time.Time
 	statExecs      uint64
 	statRestarts   uint64
 	statCPUElapsed int64
 	coverFullness  int
+	initialTriage  uint32
 
 	statsWriters *writerset.WriterSet
 }
@@ -103,9 +105,12 @@ func coordinatorLoop(c *Coordinator) {
 			// TODO: send a SIGKILL to make sure it is actually dead and not just non-communicative?
 			// TODO: consider not logging
 		}
+		haveStats := c.haveStats
 		c.mu.Unlock()
 
-		c.broadcastStats()
+		if haveStats {
+			c.broadcastStats()
+		}
 	}
 }
 
@@ -113,7 +118,12 @@ func (c *Coordinator) broadcastStats() {
 	stats := c.coordinatorStats()
 
 	// log to stdout
-	log.Println(stats.String())
+	if c.initialTriage > 0 {
+		log.Printf("initial triage corpus remaining: %d", c.initialTriage)
+	} else {
+		// log.Println(stats.String())
+		log.Println(stats.CSVLine())
+	}
 
 	// write to any http clients
 	b, err := json.Marshal(stats)
@@ -176,6 +186,15 @@ func (s coordinatorStats) String() string {
 		" restarts: 1/%v, execs: %v (%.0f/sec), cover: %v, cpu time: %v, uptime: %v",
 		s.Workers, s.Corpus, fmtDuration(time.Since(s.LastNewInputTime)),
 		s.Crashers, s.RestartsDenom, s.Execs, s.ExecsPerSec(), s.Cover,
+		s.CPUElapsed,
+		s.Uptime,
+	)
+}
+
+func (s coordinatorStats) CSVLine() string {
+	return fmt.Sprintf("workers, %d, corpus, %d, crashers, %d, execs, %d, cover, %d, user, %v, uptime, %v",
+		s.Workers, s.Corpus,
+		s.Crashers, s.Execs, s.Cover,
 		s.CPUElapsed,
 		s.Uptime,
 	)
@@ -306,6 +325,7 @@ type SyncArgs struct {
 	Restarts      uint64
 	CoverFullness int
 	CPUElapsed    int64 // nanoseconds of user CPU time (not wall time) used by this worker process since last check-in
+	InitialTriage uint32
 }
 
 type SyncRes struct {
@@ -320,6 +340,7 @@ func (c *Coordinator) Sync(a *SyncArgs, r *SyncRes) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.haveStats = true
 	w := c.workers[a.ID]
 	if w == nil {
 		return errUnknownWorker
@@ -330,6 +351,7 @@ func (c *Coordinator) Sync(a *SyncArgs, r *SyncRes) error {
 		c.coverFullness = a.CoverFullness
 	}
 	c.statCPUElapsed += a.CPUElapsed
+	c.initialTriage = a.InitialTriage
 	w.lastSync = time.Now()
 	r.Inputs = w.pending
 	w.pending = nil
