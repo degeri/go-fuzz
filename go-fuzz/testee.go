@@ -101,6 +101,7 @@ func (bin *TestBinary) test(data []byte) (res int, ns uint64, cover, sonar, outp
 			bin.stats.restarts++
 			bin.testee = newTestee(bin.fileName, bin.comm, bin.coverRegion, bin.inputRegion, bin.sonarRegion)
 		}
+		// TODO: retry (only once) when elapsed CPU time is much smaller than elapsed wall time
 		var retry bool
 		res, ns, cover, sonar, crashed, hanged, retry = bin.testee.test(data)
 		if retry {
@@ -249,8 +250,12 @@ func (t *Testee) test(data []byte) (res int, ns uint64, cover, sonar []byte, cra
 
 	// The test binary can accumulate significant amount of memory,
 	// so we recreate it periodically.
+	// TODO: monitor memory usage instead
+	// TODO: allow some way for Fuzz function to ask to die after a certain number of iterations?
+	// or to indicate that now is a good time to die (but not crashed)? maybe using a special rc or signal?
 	t.execs++
 	if t.execs > 10000 {
+		// TODO: account for process time here?
 		t.cmd.Process.Signal(syscall.SIGKILL)
 		retry = true
 		return

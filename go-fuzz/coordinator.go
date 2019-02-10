@@ -98,6 +98,9 @@ func coordinatorLoop(c *Coordinator) {
 			}
 			log.Printf("worker %v died", s.id)
 			delete(c.workers, id)
+			// TODO: start another one?
+			// TODO: send a SIGKILL to make sure it is actually dead and not just non-communicative?
+			// TODO: consider not logging
 		}
 		c.mu.Unlock()
 
