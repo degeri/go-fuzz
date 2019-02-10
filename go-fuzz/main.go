@@ -42,6 +42,7 @@ var (
 	flagHTTP          = flag.String("http", "", "HTTP server listen address (coordinator mode only)")
 	flagTTL           = flag.Duration("ttl", 0, "time to fuzz after initial triage complete")
 	flagCPUProfile    = flag.Bool("cpuprofile", false, "enable cpu profiling")
+	flagCSV           = flag.Bool("csv", false, "print in CSV form instead of plain text")
 
 	requestShutdown = make(chan struct{}, 1)
 	shutdown        uint32

@@ -119,10 +119,15 @@ func (c *Coordinator) broadcastStats() {
 
 	// log to stdout
 	if c.initialTriage > 0 {
-		log.Printf("initial triage corpus remaining: %d", c.initialTriage)
+		if !*flagCSV {
+			log.Printf("initial triage corpus remaining: %d", c.initialTriage)
+		}
 	} else {
-		// log.Println(stats.String())
-		log.Println(stats.CSVLine())
+		if *flagCSV {
+			log.Println(stats.CSVLine())
+		} else {
+			log.Println(stats.String())
+		}
 	}
 
 	// write to any http clients
