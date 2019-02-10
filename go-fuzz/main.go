@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/pkg/profile"
 )
 
 //go:generate go build github.com/dvyukov/go-fuzz/go-fuzz/vendor/github.com/elazarl/go-bindata-assetfs/go-bindata-assetfs
@@ -39,6 +41,7 @@ var (
 	flagV             = flag.Int("v", 0, "verbosity level")
 	flagHTTP          = flag.String("http", "", "HTTP server listen address (coordinator mode only)")
 	flagTTL           = flag.Duration("ttl", 0, "time to fuzz after initial triage complete")
+	flagCPUProfile    = flag.Bool("cpuprofile", false, "enable cpu profiling")
 
 	requestShutdown = make(chan struct{}, 1)
 	shutdown        uint32
@@ -47,6 +50,10 @@ var (
 )
 
 func main() {
+	var prof interface{ Stop }
+	if *flagCPUProfile {
+		p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+	}
 	flag.Parse()
 	if *flagCoordinator != "" && *flagWorker != "" {
 		log.Fatalf("both -coordinator and -worker are specified")
@@ -68,6 +75,9 @@ func main() {
 		time.Sleep(2 * time.Second)
 		for _, f := range shutdownCleanup {
 			f()
+		}
+		if p != nil {
+			p.Stop()
 		}
 		os.Exit(0)
 	}()
