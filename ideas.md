@@ -52,3 +52,9 @@ make initial startup faster by doing less work on existing corpus entries?
 anecdotally, new corpus entries get found faster shortly after initial triage is complete.
 then it slows down. is this accurate? if so, why??
 
+---
+
+do coverage analysis at build time: build a graph (grid?) of distances from every block to another.
+use this information to better estimate "depth" -- not the number of mutations, but how far
+into the code a corpus entry actually reaches. (maybe use the new analysis toy?)
+
