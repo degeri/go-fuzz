@@ -105,7 +105,7 @@ func coordinatorLoop(c *Coordinator) {
 			// TODO: send a SIGKILL to make sure it is actually dead and not just non-communicative?
 			// TODO: consider not logging
 		}
-		haveStats := c.haveStats
+		// haveStats := c.haveStats
 		c.mu.Unlock()
 
 		// if haveStats {
