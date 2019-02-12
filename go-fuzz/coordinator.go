@@ -108,9 +108,9 @@ func coordinatorLoop(c *Coordinator) {
 		haveStats := c.haveStats
 		c.mu.Unlock()
 
-		if haveStats {
-			c.broadcastStats()
-		}
+		// if haveStats {
+		c.broadcastStats()
+		// }
 	}
 }
 
@@ -118,7 +118,7 @@ func (c *Coordinator) broadcastStats() {
 	stats := c.coordinatorStats()
 
 	// log to stdout
-	if c.initialTriage > 0 {
+	if c.initialTriage > 0 && false {
 		if !*flagCSV {
 			log.Printf("initial triage corpus remaining: %d", c.initialTriage)
 		}
