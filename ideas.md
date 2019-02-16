@@ -58,3 +58,17 @@ do coverage analysis at build time: build a graph (grid?) of distances from ever
 use this information to better estimate "depth" -- not the number of mutations, but how far
 into the code a corpus entry actually reaches. (maybe use the new analysis toy?)
 
+
+---
+
+when minimizing, each time an alteration succeeds, go to beginning again
+
+---
+
+bring smash-mutate-uniq into kitchensink?
+strengthen it by handling other places where mutated inputs are in use?
+use a stable bloom filter to implement more cheaply?
+
+---
+
+
