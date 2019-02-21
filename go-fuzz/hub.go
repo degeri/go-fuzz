@@ -64,6 +64,9 @@ type ROData struct {
 	coverBlocks  map[int][]CoverBlock
 	sonarSites   []SonarSite
 	verse        *versifier.Verse
+	mutScores    []int
+	mutWeights   []uint32 // running score sum
+	canExploit   bool     // should we use mutWeights?
 }
 
 type Stats struct {
@@ -245,11 +248,59 @@ func (hub *Hub) loop() {
 			// case input.whence.InitialCorpus:
 			// 	fmt.Println("initial corpus")
 			default:
-				fmt.Printf("NEW COVERAGE VIA %v\n", input.whence)
+				// fmt.Printf("NEW COVERAGE VIA %v\n", input.whence)
 			}
 			hub.corpusSigs[sig] = struct{}{}
 			ro1 := new(ROData)
 			*ro1 = *ro
+
+			// Update mutation scores
+			if ro1.mutScores == nil {
+				ro1.mutScores = make([]int, nMutations)
+			}
+			// TODO: figure out how to persist mut scores / weights.
+			for _, c := range input.whence.Choices {
+				if c.Useless {
+					continue
+				}
+				ro1.mutScores[c.Which]++
+			}
+
+			if !ro1.canExploit {
+				sum := uint32(0)
+				for _, s := range ro1.mutScores {
+					sum += uint32(s)
+					if sum > 20 {
+						ro1.canExploit = true
+						break
+					}
+				}
+			}
+			// TODO: decay, ideally in some principled way
+			// this is a cheat, and apparently not a good one (?)
+			// TODO: be principled!
+			// for i := range ro1.mutScores {
+			// 	ro1.mutScores[i] *= 3
+			// 	ro1.mutScores[i] /= 4
+			// }
+
+			// Recalculate running scores, etc.
+			if ro1.canExploit {
+				// Update mutation scores
+				if ro1.mutWeights == nil {
+					ro1.mutWeights = make([]uint32, nMutations)
+				}
+				tot := uint32(0)
+				for i, s := range ro1.mutScores {
+					// Add 1 to all scores 0, to avoid settling too early too hard.
+					// TODO: be principled! See mutate.
+					tot += uint32(s) + 1
+					ro1.mutWeights[i] = tot
+				}
+				// fmt.Println("NEW SCORES", ro1.mutScores)
+				// fmt.Println("NEW WEIGHTS", ro1.mutWeights)
+			}
+
 			// Assign it the default score, but mark corpus for score recalculation.
 			hub.corpusStale = true
 			var scoreSum uint32

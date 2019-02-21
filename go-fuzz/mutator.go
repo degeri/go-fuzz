@@ -154,6 +154,10 @@ func (m *Mutator) generate(ro *ROData) ([]byte, *mutationSource, int) {
 	return data, whence, input.depth + 1
 }
 
+const nMutations = 23
+
+const epsilon = 100 // 0 = always exploit (if possible); 100 = always explore
+
 // TODO: restructure mutate
 // Outline:
 // Each mutation routine should be a separate function that takes params as needed.
@@ -183,7 +187,27 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			whence.Choices[len(whence.Choices)-1].Useless = true
 		}
 		previter = iter
-		which := m.rand(23)
+
+		var which uint32
+		if !ro.canExploit /* must explore */ || m.rand(100) < epsilon /* explore according to epsilon */ {
+			// explore
+			which = m.rand(nMutations)
+		} else {
+			// exploit
+			// TODO: Exploit more aggressively.
+			// In theory, we should always pick the one with the highest score here.
+			// For now, though, pick proportional to the weights (Thompson Sampling) as hedge.
+			// There's a whole literature on this stuff.
+			// Should switch to something more principled,
+			// which also takes into account moving scores over time.
+			w := m.rand(int(ro.mutWeights[len(ro.mutWeights)-1])) // TODO: off by one here??
+
+			idx := sort.Search(len(ro.mutWeights), func(i int) bool {
+				return ro.mutWeights[i] > w
+			})
+			which = uint32(idx)
+		}
+
 		choice := Choice{Which: which}
 		whence.Choices = append(whence.Choices, choice)
 		c := &whence.Choices[len(whence.Choices)-1]

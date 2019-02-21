@@ -324,7 +324,7 @@ func (c *Coordinator) NewCrasher(a *NewCrasherArgs, r *int) error {
 	c.crashers.addDescription(a.Data, buf.Bytes(), "quoted")
 	c.crashers.addDescription(a.Data, a.Error, "output")
 
-	fmt.Println("CRASHER VIA", a.Whence)
+	// fmt.Println("CRASHER VIA", a.Whence)
 
 	return nil
 }
