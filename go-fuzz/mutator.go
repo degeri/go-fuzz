@@ -156,7 +156,7 @@ func (m *Mutator) generate(ro *ROData) ([]byte, *mutationSource, int) {
 
 const nMutations = 23
 
-const epsilon = 90 // 0 = always exploit (if possible); 100 = always explore
+const epsilon = 50 // 0 = always exploit (if possible); 100 = always explore
 
 // TODO: restructure mutate
 // Outline:
