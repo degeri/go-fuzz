@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
+	"github.com/dvyukov/go-fuzz/go-fuzz/internal/pcg"
 	"github.com/dvyukov/go-fuzz/go-fuzz/internal/substr"
 )
 
@@ -24,13 +25,13 @@ type mutationSource struct {
 	Choices       []Choice
 	Iters         int
 	InitialLen    int
-	ExecType      []byte
+	ExecType      byte
 	Sonar         string
 	InitialCorpus bool
 }
 
 type Choice struct {
-	Which   int
+	Which   uint32
 	Sub     []int
 	Useless bool
 }
@@ -41,9 +42,7 @@ func (s *mutationSource) String() string {
 		fmt.Fprint(b, "initial corpus- ")
 	}
 	if len(s.Choices) == 0 && s.Sonar == "" {
-		if len(s.ExecType) > 0 {
-			fmt.Fprintf(b, "<%v>", s.ExecType[len(s.ExecType)-1])
-		}
+		fmt.Fprintf(b, "<%v>", s.ExecType)
 		return b.String()
 	}
 	if s.Sonar != "" {
@@ -67,7 +66,7 @@ func (s *mutationSource) String() string {
 }
 
 type Mutator struct {
-	r            *rand.Rand
+	r            *pcg.Source
 	ro           *ROData
 	sc           *substr.Corpus
 	sonarsamples map[string]struct{}
@@ -89,11 +88,15 @@ func (m *Mutator) addSonarSample(b []byte) {
 
 func newMutator(metadata MetaData, r *rand.Rand) *Mutator {
 	m := new(Mutator)
-	m.r = r
+
+	var seed [16]byte
+	r.Read(seed[:])
+	m.r = pcg.New(seed)
+
 	corpus := make([]string, 0, len(metadata.Literals.Strings)+len(metadata.Literals.Ints))
 	corpus = append(corpus, metadata.Literals.Strings...)
 	corpus = append(corpus, metadata.Literals.Ints...)
-	m.sc = substr.NewCorpus(m.r, corpus) // TODO: ints too? variants on strings like NUL term, length prefix?
+	m.sc = substr.NewCorpus(r, corpus) // TODO: ints too? variants on strings like NUL term, length prefix?
 	m.sonarsamples = make(map[string]struct{})
 	for i := 0; i <= 9; i++ {
 		var w *flate.Writer
@@ -107,12 +110,12 @@ func newMutator(metadata MetaData, r *rand.Rand) *Mutator {
 	return m
 }
 
-func (m *Mutator) rand(n int) int {
-	return m.r.Intn(n)
+func (m *Mutator) rand(n int) uint32 {
+	return m.r.Uint32n(uint32(n))
 }
 
 func (m *Mutator) randbool() bool {
-	return m.r.Int63()&1 == 0
+	return m.r.Uint64()&1 == 0
 }
 
 func (m *Mutator) randByteOrder() binary.ByteOrder {
@@ -130,7 +133,7 @@ func (m *Mutator) randSlice(b []byte, n int) []byte {
 		return nil
 	}
 	off := m.rand(len(b) - n + 1)
-	return b[off : off+n]
+	return b[off : off+uint32(n)]
 }
 
 // randExp2 returns n > 0 with probability 1/2^n.
@@ -142,7 +145,7 @@ func (m *Mutator) randExp2() int {
 func (m *Mutator) generate(ro *ROData) ([]byte, *mutationSource, int) {
 	corpus := ro.corpus
 	scoreSum := corpus[len(corpus)-1].runningScoreSum
-	weightedIdx := m.rand(scoreSum)
+	weightedIdx := m.rand(int(scoreSum))
 	idx := sort.Search(len(corpus), func(i int) bool {
 		return corpus[i].runningScoreSum > weightedIdx
 	})
@@ -192,20 +195,20 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 				continue
 			}
 			pos0 := m.rand(len(res))
-			pos1 := pos0 + m.chooseLen(len(res)-pos0)
+			pos1 := pos0 + m.chooseLen(len(res)-int(pos0))
 			copy(res[pos0:], res[pos1:])
-			res = res[:len(res)-(pos1-pos0)]
+			res = res[:uint32(len(res))-(pos1-pos0)]
 		case 1:
 			// Insert a range of random bytes.
 			// TODO: use splice
 			pos := m.rand(len(res) + 1)
 			n := m.chooseLen(10)
 			// c.Sub = append(c.Sub, n)
-			for i := 0; i < n; i++ {
+			for i := uint32(0); i < n; i++ {
 				res = append(res, 0)
 			}
 			copy(res[pos+n:], res[pos:])
-			for i := 0; i < n; i++ {
+			for i := uint32(0); i < n; i++ {
 				res[pos+i] = byte(m.rand(256))
 			}
 		case 2:
@@ -220,15 +223,15 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			for dst == src {
 				dst = m.rand(len(res))
 			}
-			n := m.chooseLen(len(res) - src)
+			n := m.chooseLen(len(res) - int(src))
 			tmp := make([]byte, n)
 			copy(tmp, res[src:])
-			for i := 0; i < n; i++ {
+			for i := uint32(0); i < n; i++ {
 				res = append(res, 0)
 			}
 			copy(res[dst+n:], res[dst:])
 			// TODO: use copy??
-			for i := 0; i < n; i++ {
+			for i := uint32(0); i < n; i++ {
 				res[dst+i] = tmp[i]
 			}
 		case 3:
@@ -242,10 +245,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			for dst == src {
 				dst = m.rand(len(res))
 			}
-			n := m.chooseLen(len(res) - src)
-			if dst > len(res) || src+n > len(res) {
-				println(len(res), dst, src, n)
-			}
+			n := m.chooseLen(len(res) - int(src))
 			copy(res[dst:], res[src:src+n])
 		case 4:
 			// Bit flip(s). Spooky!
@@ -253,10 +253,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 				iter--
 				continue
 			}
-			nflips := 1
-			for m.randbool() {
-				nflips++
-			}
+			nflips := m.randExp2()
 			for i := 0; i < nflips; i++ {
 				pos := m.rand(len(res))
 				res[pos] ^= 1 << uint(m.rand(8))
@@ -452,7 +449,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 				iter--
 				continue
 			}
-			copy(res[idx0:idx0+m.rand(diff-2)+1], other[idx0:])
+			copy(res[idx0:uint32(idx0)+m.rand(diff-2)+1], other[idx0:])
 			// TODO: use our splice routine to do more generic splicing, instead of just a half-and-half.
 		case 17:
 			// Insert a part of another input.
@@ -467,12 +464,13 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			}
 			pos0 := m.rand(len(res) + 1)
 			pos1 := m.rand(len(other) - 2)
-			n := m.chooseLen(len(other)-pos1-2) + 2
-			for i := 0; i < n; i++ {
+			n := m.chooseLen(len(other)-int(pos1)-2) + 2
+			for i := uint32(0); i < n; i++ {
 				res = append(res, 0)
 			}
 			copy(res[pos0+n:], res[pos0:])
-			for i := 0; i < n; i++ {
+			// TODO: use copy?
+			for i := uint32(0); i < n; i++ {
 				res[pos0+i] = other[pos1+i]
 			}
 		case 18:
@@ -483,11 +481,11 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 				continue
 			}
 			pos := m.rand(len(res) + 1)
-			if pos == len(res)+1 {
+			if int(pos) == len(res)+1 {
 				// TODO: make splice handle this case?
 				res = append(res, lit...)
 			} else {
-				res = splice(res, pos, 0, lit)
+				res = splice(res, int(pos), 0, lit)
 			}
 		case 19:
 			// Replace random bytes with literal.
@@ -556,7 +554,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 						break
 					}
 				} else {
-					i += pos
+					i += int(pos)
 				}
 				res = splice(res, i, len(lit), replace)
 			case 4:
@@ -662,8 +660,13 @@ func (m *Mutator) pickLiteral(ro *ROData) []byte {
 		return nil
 	}
 	var lit []byte
-	order := m.r.Perm(3)
-	for _, choice := range order {
+	var order [2]int
+	if m.randbool() {
+		order = [2]int{0, 1}
+	} else {
+		order = [2]int{1, 0}
+	}
+	for _, choice := range &order {
 		switch choice {
 		case 0:
 			if len(ro.strLits) == 0 {
@@ -694,7 +697,7 @@ func (m *Mutator) pickLiteral(ro *ROData) []byte {
 // chooseLen chooses length of range mutation.
 // It gives preference to shorter ranges.
 // TODO: Zipf instead? Examine distribution.
-func (m *Mutator) chooseLen(n int) int {
+func (m *Mutator) chooseLen(n int) uint32 {
 	switch x := m.rand(100); {
 	case x < 90:
 		return m.rand(min(8, n)) + 1

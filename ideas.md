@@ -72,3 +72,5 @@ use a stable bloom filter to implement more cheaply?
 ---
 
 
+when coordinator and worker and hub etc are all in process, instead of using RPC, just make function calls.
+heopfully will reduce time spent in the scheduler, which is not inconsiderable.

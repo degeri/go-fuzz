@@ -68,7 +68,7 @@ type Input struct {
 	execTime        uint64
 	favored         bool
 	score           int
-	runningScoreSum int
+	runningScoreSum uint32
 	whence          *mutationSource
 }
 
@@ -570,12 +570,16 @@ func (w *Worker) smash(data []byte, depth int) {
 }
 
 func (w *Worker) testInput(data []byte, whence *mutationSource, depth, typ int) {
-	whence.ExecType = append(whence.ExecType, byte(typ))
+	if whence.ExecType == 0 {
+		whence.ExecType = byte(typ)
+	}
 	w.testInputImpl(w.coverBin, data, whence, depth, typ)
 }
 
 func (w *Worker) testInputSonar(data []byte, whence *mutationSource, depth int) (sonar []byte) {
-	whence.ExecType = append(whence.ExecType, execSonar)
+	if whence.ExecType == 0 {
+		whence.ExecType = byte(execSonar)
+	}
 	return w.testInputImpl(w.sonarBin, data, whence, depth, execSonar)
 }
 
@@ -602,7 +606,9 @@ func (w *Worker) noteNewInput(data, cover []byte, res int, whence *mutationSourc
 		return
 	}
 	if w.hub.updateMaxCover(cover) {
-		whence.ExecType = append(whence.ExecType, byte(typ))
+		if whence.ExecType == 0 {
+			whence.ExecType = byte(typ)
+		}
 		w.triageQueue = append(w.triageQueue, CoordinatorInput{makeCopy(data), uint64(depth), typ, false, false, whence})
 	}
 }

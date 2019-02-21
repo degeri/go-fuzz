@@ -239,7 +239,7 @@ func (hub *Hub) loop() {
 			switch {
 			case input.whence == nil:
 				fmt.Println("nil whence!?")
-			case len(input.whence.ExecType) > 0 && input.whence.ExecType[len(input.whence.ExecType)-1] == execCorpus:
+			case input.whence.ExecType == execCorpus:
 				// NO-OP
 				// could print
 			// case input.whence.InitialCorpus:
@@ -252,7 +252,7 @@ func (hub *Hub) loop() {
 			*ro1 = *ro
 			// Assign it the default score, but mark corpus for score recalculation.
 			hub.corpusStale = true
-			scoreSum := 0
+			var scoreSum uint32
 			if len(ro1.corpus) > 0 {
 				scoreSum = ro1.corpus[len(ro1.corpus)-1].runningScoreSum
 			}
@@ -460,12 +460,12 @@ func (hub *Hub) updateScores() {
 			candidates[i].score = 0
 		}
 	}
-	scoreSum := 0
+	var scoreSum uint32
 	for i, inp := range corpus {
 		if !inp.favored {
 			inp.score = minScore
 		}
-		scoreSum += inp.score
+		scoreSum += uint32(inp.score)
 		corpus[i].runningScoreSum = scoreSum
 	}
 

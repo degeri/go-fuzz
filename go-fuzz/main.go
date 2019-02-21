@@ -42,6 +42,8 @@ var (
 	flagHTTP          = flag.String("http", "", "HTTP server listen address (coordinator mode only)")
 	flagTTL           = flag.Duration("ttl", 0, "time to fuzz after initial triage complete")
 	flagCPUProfile    = flag.Bool("cpuprofile", false, "enable cpu profiling")
+	flagMemProfile    = flag.Bool("memprofile", false, "enable mem profiling")
+	flagTrace         = flag.Bool("trace", false, "enable tracing")
 	flagCSV           = flag.Bool("csv", false, "print in CSV form instead of plain text")
 
 	requestShutdown = make(chan struct{}, 1)
@@ -55,6 +57,10 @@ func main() {
 	var prof interface{ Stop() }
 	if *flagCPUProfile {
 		prof = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+	} else if *flagMemProfile {
+		prof = profile.Start(profile.MemProfile, profile.ProfilePath("."), profile.MemProfileRate(1))
+	} else if *flagTrace {
+		prof = profile.Start(profile.TraceProfile, profile.ProfilePath("."))
 	}
 	if *flagCoordinator != "" && *flagWorker != "" {
 		log.Fatalf("both -coordinator and -worker are specified")
