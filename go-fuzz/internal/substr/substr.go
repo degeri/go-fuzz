@@ -2,6 +2,7 @@ package substr
 
 import (
 	"bytes"
+	"index/suffixarray"
 	"math/rand"
 
 	"github.com/dvyukov/go-fuzz/go-fuzz/internal/pcg"
@@ -51,6 +52,7 @@ func NewCorpus(r *rand.Rand, ss []string) *Corpus {
 // If no element of the corpus is a substring of s, it returns "".
 func (c *Corpus) Pick(b []byte) []byte {
 	const impl = 1
+
 	// Implementation option 1: Pick a random element of the corpus, check whether it is a substring of s, return it if so.
 	// This isn't a great choice, because it is very inefficient in the case in which no corpus element is a substring of s.
 	if impl == 1 {
@@ -74,31 +76,31 @@ func (c *Corpus) Pick(b []byte) []byte {
 		return nil
 	}
 
-	/*
-		// Implementation option 2: Same as option 1, but using index/suffixarray.
-		if impl == 2 {
-			c.r.Shuffle(len(c.ss), func(i, j int) {
-				c.bb[i], c.bb[j] = c.bb[j], c.bb[i]
-				c.ss[i], c.ss[j] = c.ss[j], c.ss[i]
-			})
-			idx := suffixarray.New([]byte(s))
-			for i, b := range c.bb {
-				if len(idx.Lookup(b, 1)) > 0 {
-					return c.ss[i]
-				}
+	// Implementation option 2: Same as option 1, but using index/suffixarray.
+	if impl == 2 {
+		suff := suffixarray.New(b)
+		p := c.perm
+		for len(p) > 0 {
+			// Select an element at random to try.
+			idx := c.r.Uint32n(uint32(len(p)))
+			x := p[idx]
+			needle := c.bb[x]
+			if len(suff.Lookup(needle, 1)) > 0 {
+				return needle
 			}
-			return ""
+			// No luck. Move that element out of the way and try again.
+			p[0], p[idx] = p[idx], p[0]
+			// TODO: do this with base offset rather than indices to avoid re-slicing costs.
+			p = p[1:]
 		}
+		// Didn't find anything.
+		return nil
+	}
 
-		// Implementation option 3: Use a rolling hash (Rabin-Karp) to generate a signature for each corpus element.
-		// Apply the rolling hash to s and use it to populate a Bloom Filter.
-		// For each corpus element, use the Bloom Filter to try to rule it out.
-		// Apply implementation option 1 or 2 from there.
-		if impl == 3 {
-			// TODO!
-			panic("not implemented yet")
-		}
-	*/
+	// Implementation option 3: Use a rolling hash (Rabin-Karp) to generate a signature for each corpus element.
+	// Apply the rolling hash to s and use it to populate a Bloom Filter.
+	// For each corpus element, use the Bloom Filter to try to rule it out.
+	// Apply implementation option 1 or 2 from there.
 
 	panic("no Pick implementation selected")
 }
