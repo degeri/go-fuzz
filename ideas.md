@@ -74,3 +74,45 @@ use a stable bloom filter to implement more cheaply?
 
 when coordinator and worker and hub etc are all in process, instead of using RPC, just make function calls.
 heopfully will reduce time spent in the scheduler, which is not inconsiderable.
+
+
+---
+
+look at results
+reply to dmitry, david
+upstream type-precision
+improve literals (more precise)
+investigate what takes so much time with sonar; understand it better
+figure out which sonar things work best/worst
+figure out which fuzz things work best/worst
+manually look at generated code
+go/packages support
+reduce byte slice allocations somehow, throughout
+finish thinking about go-bindata
+
+rewrite go-fuzz-build to use go/packages
+more literals improvements, including how they get stored...
+embed everything into a fuzz executable
+
+todo from processSonarData:
+
+		// TODO: extract literal corpus from sonar instead of from source.
+		// This should give smaller, better corpus which does not contain literals from dead code.
+
+maybe have a separate sonar literal set?
+also, detect at least trivially dead code?
+
+why does it generate lots of new coverage each time it restarts but seem to get "stuck" after a while of running??
+theory: depth impact on scores?
+new theory: minimization helps a lot--occasionally re-minimize our corpus?!
+or just turn down sonar? or do a batch of sonar and then a batch of versing and then a batch of fuzzing?
+
+WHAT IS THIS??? Can we replicate it somehow???
+Or it is just the warm-up? Probably just warm-up, actually,
+if there's no exec type...
+ 85.01%   686 NEW COVERAGE VIA initial corpus- 
+
+---
+
+avoid network connection to own process, just call func instead, might reduce scheduler churn
+improve literal collection again (no stringer files, don't throw in a million ints in little/big/etc form, do that lazily)
