@@ -9,30 +9,101 @@ import (
 	"compress/lzw"
 	"encoding/binary"
 	"fmt"
-	"io"
+	"io/ioutil"
+	"math/bits"
 	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
 	"github.com/dvyukov/go-fuzz/go-fuzz/internal/substr"
 )
 
-type Mutator struct {
-	r  *rand.Rand
-	ro *ROData
-	sc *substr.Corpus
+type mutationSource struct {
+	Choices       []Choice
+	Iters         int
+	InitialLen    int
+	ExecType      []byte
+	Sonar         string
+	InitialCorpus bool
 }
 
-func newMutator(metadata MetaData) *Mutator {
+type Choice struct {
+	Which   int
+	Sub     []int
+	Useless bool
+}
+
+func (s *mutationSource) String() string {
+	b := new(strings.Builder)
+	if s.InitialCorpus {
+		fmt.Fprint(b, "initial corpus- ")
+	}
+	if len(s.Choices) == 0 && s.Sonar == "" {
+		if len(s.ExecType) > 0 {
+			fmt.Fprintf(b, "<%v>", s.ExecType[len(s.ExecType)-1])
+		}
+		return b.String()
+	}
+	if s.Sonar != "" {
+		fmt.Fprintf(b, "%s ", s.Sonar)
+	}
+	// fmt.Fprintf(b, "in=%d ", s.InitialLen)
+	// fmt.Fprintf(b, "iters=%d: ", s.Iters)
+	for _, c := range s.Choices {
+		if c.Useless {
+			// fmt.Fprintf(b, "(%d)", c.Which)
+		} else {
+			if len(c.Sub) > 0 {
+				fmt.Fprintf(b, "%d %v, ", c.Which, c.Sub)
+			} else {
+				fmt.Fprintf(b, "%d, ", c.Which)
+			}
+		}
+	}
+	// fmt.Fprintf(b, " <%v>", s.ExecType[len(s.ExecType)-1])
+	return b.String()
+}
+
+type Mutator struct {
+	r            *rand.Rand
+	ro           *ROData
+	sc           *substr.Corpus
+	sonarsamples map[string]struct{}
+	buf          bytes.Buffer
+	flateWriters []*flate.Writer
+}
+
+func (m *Mutator) addSonarSample(b []byte) {
+	// TODO: differentiate between different kinds of sonar samples: strings, ints, etc.
+	if len(b) < 2 {
+		return
+	}
+	if _, ok := m.sonarsamples[string(b)]; ok {
+		return
+	}
+	m.sonarsamples[string(b)] = struct{}{}
+	fmt.Printf("ACCEPT %q -> %d\n", b, len(m.sonarsamples))
+}
+
+func newMutator(metadata MetaData, r *rand.Rand) *Mutator {
 	m := new(Mutator)
-	m.r = rand.New(rand.NewSource(time.Now().UnixNano())) // TODO: use crypto/rand.Reader instead? These get spawned really close to each other.
+	m.r = r
 	corpus := make([]string, 0, len(metadata.Literals.Strings)+len(metadata.Literals.Ints))
 	corpus = append(corpus, metadata.Literals.Strings...)
 	corpus = append(corpus, metadata.Literals.Ints...)
 	m.sc = substr.NewCorpus(m.r, corpus) // TODO: ints too? variants on strings like NUL term, length prefix?
+	m.sonarsamples = make(map[string]struct{})
+	for i := 0; i <= 9; i++ {
+		var w *flate.Writer
+		if i == 0 {
+			w, _ = flate.NewWriter(nil, flate.HuffmanOnly)
+		} else {
+			w, _ = flate.NewWriter(nil, i)
+		}
+		m.flateWriters = append(m.flateWriters, w)
+	}
 	return m
 }
 
@@ -62,7 +133,13 @@ func (m *Mutator) randSlice(b []byte, n int) []byte {
 	return b[off : off+n]
 }
 
-func (m *Mutator) generate(ro *ROData) ([]byte, int) {
+// randExp2 returns n > 0 with probability 1/2^n.
+// TODO: better docs
+func (m *Mutator) randExp2() int {
+	return bits.LeadingZeros64(m.r.Uint64()) + 1
+}
+
+func (m *Mutator) generate(ro *ROData) ([]byte, *mutationSource, int) {
 	corpus := ro.corpus
 	scoreSum := corpus[len(corpus)-1].runningScoreSum
 	weightedIdx := m.rand(scoreSum)
@@ -70,7 +147,8 @@ func (m *Mutator) generate(ro *ROData) ([]byte, int) {
 		return corpus[i].runningScoreSum > weightedIdx
 	})
 	input := &corpus[idx]
-	return m.mutate(input.data, ro), input.depth + 1
+	data, whence := m.mutate(input.data, ro)
+	return data, whence, input.depth + 1
 }
 
 // TODO: restructure mutate
@@ -88,16 +166,25 @@ func (m *Mutator) generate(ro *ROData) ([]byte, int) {
 // or whether there are fixed-length entries, or what.)
 // TODO: when we restructure the for loop, make it so that we automatically do iter-- if bytes.Equal.
 
-func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
+func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 	corpus := ro.corpus
 	res := make([]byte, len(data))
 	copy(res, data)
-	nm := 1
-	for m.rand(2) == 0 {
-		nm++
-	}
+	nm := m.randExp2()
+	whence := new(mutationSource)
+	whence.Iters = nm
+	whence.InitialLen = len(data)
+	previter := 0
 	for iter := 0; iter < nm || bytes.Equal(res, data); iter++ {
-		switch m.rand(23) {
+		if (iter == previter || bytes.Equal(res, data)) && len(whence.Choices) > 0 {
+			whence.Choices[len(whence.Choices)-1].Useless = true
+		}
+		previter = iter
+		which := m.rand(23)
+		choice := Choice{Which: which}
+		whence.Choices = append(whence.Choices, choice)
+		c := &whence.Choices[len(whence.Choices)-1]
+		switch which {
 		case 0:
 			// Remove a range of bytes.
 			if len(res) <= 1 {
@@ -110,8 +197,10 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			res = res[:len(res)-(pos1-pos0)]
 		case 1:
 			// Insert a range of random bytes.
+			// TODO: use splice
 			pos := m.rand(len(res) + 1)
 			n := m.chooseLen(10)
+			// c.Sub = append(c.Sub, n)
 			for i := 0; i < n; i++ {
 				res = append(res, 0)
 			}
@@ -125,6 +214,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				iter--
 				continue
 			}
+			// TODO: use splice
 			src := m.rand(len(res))
 			dst := m.rand(len(res))
 			for dst == src {
@@ -137,6 +227,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				res = append(res, 0)
 			}
 			copy(res[dst+n:], res[dst:])
+			// TODO: use copy??
 			for i := 0; i < n; i++ {
 				res[dst+i] = tmp[i]
 			}
@@ -430,7 +521,9 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 			// if not one, do as below?
 			// maybe not emphasize first/last so much??
 
-			switch m.rand(5) {
+			sub := m.rand(5)
+			// c.Sub = append(c.Sub, sub)
+			switch sub {
 			case 0:
 				// replace the first instance
 				i := strings.Index(r, lit)
@@ -485,57 +578,68 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 				res = tmp
 			}
 		case 21:
-			buf := new(bytes.Buffer)
+			if len(res) == 0 {
+				iter--
+				continue
+			}
+			buf := &m.buf
+			buf.Reset()
 			order := lzw.LSB
+			// TODO: does the bit order matter, given how we are using this?
 			if m.randbool() {
 				order = lzw.MSB
 			}
 			w := lzw.NewWriter(buf, order, 8)
-			_, err := io.Copy(w, bytes.NewReader(res))
-			if err != nil {
+			if _, err := w.Write(res); err != nil {
 				panic(err)
 			}
-			err = w.Close()
-			if err != nil {
+			if err := w.Close(); err != nil {
 				panic(err)
 			}
 			b := buf.Bytes()
-			b[rand.Intn(len(b))] ^= 1 << uint(rand.Intn(8))
-			r := lzw.NewReader(bytes.NewReader(b), order, 8)
-			// intentionally ignore err from this copy: we've corrupted the stream, so it is probably broken.
-			buf2 := new(bytes.Buffer)
-			_, _ = io.Copy(buf2, r)
+			iters := 1 //m.randExp2()
+			for i := 0; i < iters; i++ {
+				// TODO: skew towards beginning?? -- unclear, but looks like no?
+				// TODO: multiple bit flips (exponential)?
+				pos := rand.Intn(len(b))
+				c.Sub = append(c.Sub, int(float64(10*pos)/float64(len(b))))
+				b[pos] ^= 1 << uint(rand.Intn(8))
+			}
+			r := lzw.NewReader(buf, order, 8)
+			// intentionally ignore err from this read: we've corrupted the stream, so it is probably broken.
+			// TODO: use ReadFull to read into res and then truncate;
+			// if res is full, then append, reslice, and read the rest
+			// same for flate below.
+			// maybe also have another reusable tmp slice in the mutator?
+			res, _ = ioutil.ReadAll(r)
 			r.Close()
-			res = buf2.Bytes()
 		case 22:
-			buf := new(bytes.Buffer)
-			level := m.rand(11) - 2 // range: -2 .. 9
-			// NoCompression      = 0
-			// BestSpeed          = 1
-			// BestCompression    = 9
-			// DefaultCompression = -1
-			// HuffmanOnly = -2
-			w, err := flate.NewWriter(buf, level)
-			if err != nil {
+			buf := &m.buf
+			buf.Reset()
+			level := m.rand(len(m.flateWriters))
+			w := m.flateWriters[level]
+			// c.Sub = append(c.Sub, level)
+			w.Reset(buf)
+			if _, err := w.Write(res); err != nil {
 				panic(err)
 			}
-			_, err = io.Copy(w, bytes.NewReader(res))
-			if err != nil {
-				panic(err)
-			}
-			err = w.Flush()
-			if err != nil {
+			if err := w.Flush(); err != nil {
 				panic(err)
 			}
 			b := buf.Bytes()
-			// TODO: prefer to flip a bit near the beginning?
-			b[rand.Intn(len(b))] ^= 1 << uint(rand.Intn(8))
+			// TODO: prefer to flip a bit near the beginning? -- not super clear, but looks like slightly yes
+			// TODO: multiple bit flips (exponential)?
+			iters := 1 //m.randExp2()
+			for i := 0; i < iters; i++ {
+				pos := rand.Intn(len(b))
+				c.Sub = append(c.Sub, int(float64(10*pos)/float64(len(b))))
+				b[pos] ^= 1 << uint(rand.Intn(8))
+			}
 			r := flate.NewReader(bytes.NewReader(b))
 			// intentionally ignore err from this copy: we've corrupted the stream, so it is probably broken.
-			buf2 := new(bytes.Buffer)
-			_, _ = io.Copy(buf2, r)
+			// todo: optimize to allocate less, see above
+			res, _ = ioutil.ReadAll(r)
 			r.Close()
-			res = buf2.Bytes()
 		}
 		// Ideas for more mutations:
 		// Instead of swapping just two bytes, swap two disjoint byte ranges of the same random length.
@@ -547,23 +651,41 @@ func (m *Mutator) mutate(data []byte, ro *ROData) []byte {
 	if len(res) > MaxInputSize {
 		res = m.randSlice(res, MaxInputSize)
 	}
-	return res
+	return res, whence
 }
 
 func (m *Mutator) pickLiteral(ro *ROData) []byte {
 	// TODO: encode int literals in big-endian, base-128, ascii, etc.
 	// TODO: other kinds of literals
 	// TODO: encode strings with length prefix and with trailing NUL
-	if len(ro.intLits) == 0 && len(ro.strLits) == 0 {
+	if len(ro.intLits) == 0 && len(ro.strLits) == 0 && len(m.sonarsamples) == 0 {
 		return nil
 	}
 	var lit []byte
-	if len(ro.strLits) != 0 && m.rand(2) == 0 {
-		lit = []byte(ro.strLits[m.rand(len(ro.strLits))])
-	} else {
-		lit = ro.intLits[m.rand(len(ro.intLits))]
-		if m.rand(3) == 0 {
-			lit = reverse(lit)
+	order := m.r.Perm(3)
+	for _, choice := range order {
+		switch choice {
+		case 0:
+			if len(ro.strLits) == 0 {
+				continue
+			}
+			lit = []byte(ro.strLits[m.rand(len(ro.strLits))])
+		case 1:
+			if len(ro.intLits) == 0 {
+				continue
+			}
+			lit = ro.intLits[m.rand(len(ro.intLits))]
+			if m.rand(3) == 0 {
+				lit = reverse(lit)
+			}
+		case 2:
+			if len(m.sonarsamples) == 0 {
+				continue
+			}
+			for k := range m.sonarsamples {
+				lit = []byte(k)
+				break
+			}
 		}
 	}
 	return lit

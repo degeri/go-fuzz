@@ -1,22 +1,32 @@
 package substr
 
 import (
-	"index/suffixarray"
 	"math/rand"
 	"strings"
+
+	"github.com/dvyukov/go-fuzz/go-fuzz/internal/pcg"
 )
 
 type Corpus struct {
-	r  *rand.Rand
-	ss []string
-	bb [][]byte // byte slice variants of ss
-	rk [][]int  // Rabin-Karp hashes of substrings of ss
+	r    *pcg.Source
+	perm []int // all distinct indices into ss/bb/rk, in no particular order
+	ss   []string
+	bb   [][]byte // byte slice variants of ss
+	rk   [][]int  // Rabin-Karp hashes of substrings of ss
 }
 
 func NewCorpus(r *rand.Rand, ss []string) *Corpus {
 	c := new(Corpus)
-	c.r = r
+	var seed [16]byte
+	r.Read(seed[:])
+	c.r = pcg.New(seed)
 	c.ss = ss
+
+	// Populate c.perm. It'll get shuffled around later.
+	c.perm = make([]int, len(c.ss))
+	for i := range c.ss {
+		c.perm[i] = i
+	}
 
 	// Make a slice of byte slices containing the same contents as c.ss.
 	// Use a single byte slice for cache happiness.
@@ -32,6 +42,9 @@ func NewCorpus(r *rand.Rand, ss []string) *Corpus {
 		c.bb[i] = b[n : n+len(s) : n+len(s)]
 		n += len(s)
 	}
+
+	// TODO: create c.rk
+
 	return c
 }
 
@@ -42,38 +55,51 @@ func (c *Corpus) Pick(s string) string {
 	// Implementation option 1: Pick a random element of the corpus, check whether it is a substring of s, return it if so.
 	// This isn't a great choice, because it is very inefficient in the case in which no corpus element is a substring of s.
 	if impl == 1 {
-		c.r.Shuffle(len(c.ss), func(i, j int) { c.ss[i], c.ss[j] = c.ss[j], c.ss[i] })
-		for _, n := range c.ss {
-			if strings.Contains(s, n) {
-				return n
+		// TODO: document this algorithm (obviously a Fischer-Yates variant),
+		// and ensure that it doesn't have any off-by-one mistakes.
+		p := c.perm
+		for len(p) > 0 {
+			// Select an element at random to try.
+			idx := c.r.Uint32n(uint32(len(p)))
+			x := p[idx]
+			candidate := c.ss[x]
+			if strings.Contains(s, candidate) {
+				return candidate
 			}
+			// No luck. Move that element out of the way and try again.
+			p[0], p[idx] = p[idx], p[0]
+			// TODO: do this with base offset rather than indices to avoid re-slicing costs.
+			p = p[1:]
 		}
+		// Didn't find anything.
 		return ""
 	}
 
-	// Implementation option 2: Same as option 1, but using index/suffixarray.
-	if impl == 2 {
-		c.r.Shuffle(len(c.ss), func(i, j int) {
-			c.bb[i], c.bb[j] = c.bb[j], c.bb[i]
-			c.ss[i], c.ss[j] = c.ss[j], c.ss[i]
-		})
-		idx := suffixarray.New([]byte(s))
-		for i, b := range c.bb {
-			if len(idx.Lookup(b, 1)) > 0 {
-				return c.ss[i]
+	/*
+		// Implementation option 2: Same as option 1, but using index/suffixarray.
+		if impl == 2 {
+			c.r.Shuffle(len(c.ss), func(i, j int) {
+				c.bb[i], c.bb[j] = c.bb[j], c.bb[i]
+				c.ss[i], c.ss[j] = c.ss[j], c.ss[i]
+			})
+			idx := suffixarray.New([]byte(s))
+			for i, b := range c.bb {
+				if len(idx.Lookup(b, 1)) > 0 {
+					return c.ss[i]
+				}
 			}
+			return ""
 		}
-		return ""
-	}
 
-	// Implementation option 3: Use a rolling hash (Rabin-Karp) to generate a signature for each corpus element.
-	// Apply the rolling hash to s and use it to populate a Bloom Filter.
-	// For each corpus element, use the Bloom Filter to try to rule it out.
-	// Apply implementation option 1 or 2 from there.
-	if impl == 3 {
-		// TODO!
-		panic("not implemented yet")
-	}
+		// Implementation option 3: Use a rolling hash (Rabin-Karp) to generate a signature for each corpus element.
+		// Apply the rolling hash to s and use it to populate a Bloom Filter.
+		// For each corpus element, use the Bloom Filter to try to rule it out.
+		// Apply implementation option 1 or 2 from there.
+		if impl == 3 {
+			// TODO!
+			panic("not implemented yet")
+		}
+	*/
 
 	panic("no Pick implementation selected")
 }

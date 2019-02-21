@@ -7,11 +7,15 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/bits"
+	"math/rand"
+	mathrand "math/rand"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -65,6 +69,7 @@ type Input struct {
 	favored         bool
 	score           int
 	runningScoreSum int
+	whence          *mutationSource
 }
 
 func workerMain() {
@@ -121,15 +126,25 @@ func workerMain() {
 
 	hub := newHub(metadata)
 	for i := 0; i < *flagProcs; i++ {
+		r := mathrand.New(rand.NewSource(cryptoRandInt64()))
 		w := &Worker{
 			id:      i,
 			hub:     hub,
-			mutator: newMutator(metadata),
+			mutator: newMutator(metadata, r),
 		}
 		w.coverBin = newTestBinary(coverBin, w.periodicCheck, &w.stats)
 		w.sonarBin = newTestBinary(sonarBin, w.periodicCheck, &w.stats)
 		go w.loop()
 	}
+}
+
+func cryptoRandInt64() int64 {
+	b := make([]byte, 8)
+	_, err := io.ReadFull(cryptorand.Reader, b)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return int64(binary.LittleEndian.Uint64(b))
 }
 
 func (w *Worker) loop() {
@@ -194,16 +209,16 @@ func (w *Worker) loop() {
 		// 9 out of 10 iterations are random fuzzing.
 		iter++
 		if iter%10 != 0 || ro.verse == nil {
-			data, depth := w.mutator.generate(ro)
+			data, whence, depth := w.mutator.generate(ro)
 			// Every 1000-th iteration goes to sonar.
 			fuzzSonarIter++
 			if *flagSonar && fuzzSonarIter%1000 == 0 {
 				// TODO: ensure that generated hint inputs does not actually take 99% of time.
-				sonar := w.testInputSonar(data, depth)
+				sonar := w.testInputSonar(data, whence, depth)
 				w.processSonarData(data, sonar, depth, false)
 			} else {
 				// Plain old blind fuzzing.
-				w.testInput(data, depth, execFuzz)
+				w.testInput(data, whence, depth, execFuzz)
 			}
 		} else {
 			// 1 out of 10 iterations goes to versifier.
@@ -215,10 +230,10 @@ func (w *Worker) loop() {
 			// Every 100-th versifier input goes to sonar.
 			versifierSonarIter++
 			if *flagSonar && versifierSonarIter%100 == 0 {
-				sonar := w.testInputSonar(data, 0)
+				sonar := w.testInputSonar(data, new(mutationSource), 0)
 				w.processSonarData(data, sonar, 0, false)
 			} else {
-				w.testInput(data, 0, execVersifier)
+				w.testInput(data, new(mutationSource), 0, execVersifier)
 			}
 		}
 	}
@@ -237,6 +252,7 @@ func (w *Worker) triageInput(input CoordinatorInput) {
 		depth:    int(input.Prio),
 		typ:      input.Type,
 		execTime: 1 << 60,
+		whence:   input.Whence,
 	}
 	// Calculate min exec time, min coverage and max result of 3 runs.
 	for i := 0; i < 3; i++ {
@@ -244,7 +260,7 @@ func (w *Worker) triageInput(input CoordinatorInput) {
 		res, ns, cover, _, output, crashed, hanged := w.coverBin.test(inp.data)
 		if crashed {
 			// Inputs in corpus should not crash.
-			w.noteCrasher(inp.data, output, hanged)
+			w.noteCrasher(inp.data, output, hanged, inp.whence)
 			return
 		}
 		if inp.cover == nil {
@@ -277,11 +293,11 @@ func (w *Worker) triageInput(input CoordinatorInput) {
 		}
 		inp.data = w.minimizeInput(inp.data, false, func(candidate, cover, output []byte, res int, crashed, hanged bool) bool {
 			if crashed {
-				w.noteCrasher(candidate, output, hanged)
+				w.noteCrasher(candidate, output, hanged, inp.whence)
 				return false
 			}
 			if inp.res != res || worseCover(newCover, cover) {
-				w.noteNewInput(candidate, cover, res, inp.depth+1, execMinimizeInput)
+				w.noteNewInput(candidate, cover, res, inp.whence, inp.depth+1, execMinimizeInput)
 				return false
 			}
 			return true
@@ -308,7 +324,7 @@ func (w *Worker) processCrasher(crash NewCrasherArgs) {
 			}
 			supp := extractSuppression(output)
 			if hanged || !bytes.Equal(crash.Suppression, supp) {
-				w.noteCrasher(candidate, output, hanged)
+				w.noteCrasher(candidate, output, hanged, crash.Whence)
 				return false
 			}
 			crash.Error = output
@@ -412,14 +428,14 @@ func (w *Worker) smash(data []byte, depth int) {
 
 	// Pass it through sonar.
 	if *flagSonar {
-		sonar := w.testInputSonar(data, depth)
+		sonar := w.testInputSonar(data, new(mutationSource), depth)
 		w.processSonarData(data, sonar, depth, true)
 	}
 
 	// Flip each bit one-by-one.
 	for i := 0; i < len(data)*8; i++ {
 		data[i/8] ^= 1 << uint(i%8)
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i/8] ^= 1 << uint(i%8)
 	}
 
@@ -427,7 +443,7 @@ func (w *Worker) smash(data []byte, depth int) {
 	for i := 0; i < len(data)*8-1; i++ {
 		data[i/8] ^= 1 << uint(i%8)
 		data[(i+1)/8] ^= 1 << uint((i+1)%8)
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i/8] ^= 1 << uint(i%8)
 		data[(i+1)/8] ^= 1 << uint((i+1)%8)
 	}
@@ -438,7 +454,7 @@ func (w *Worker) smash(data []byte, depth int) {
 		data[(i+1)/8] ^= 1 << uint((i+1)%8)
 		data[(i+2)/8] ^= 1 << uint((i+2)%8)
 		data[(i+3)/8] ^= 1 << uint((i+3)%8)
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i/8] ^= 1 << uint(i%8)
 		data[(i+1)/8] ^= 1 << uint((i+1)%8)
 		data[(i+2)/8] ^= 1 << uint((i+2)%8)
@@ -448,7 +464,7 @@ func (w *Worker) smash(data []byte, depth int) {
 	// Byte flip.
 	for i := 0; i < len(data); i++ {
 		data[i] ^= 0xff
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i] ^= 0xff
 	}
 
@@ -456,7 +472,7 @@ func (w *Worker) smash(data []byte, depth int) {
 	for i := 0; i < len(data)-1; i++ {
 		data[i] ^= 0xff
 		data[i+1] ^= 0xff
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i] ^= 0xff
 		data[i+1] ^= 0xff
 	}
@@ -467,7 +483,7 @@ func (w *Worker) smash(data []byte, depth int) {
 		data[i+1] ^= 0xff
 		data[i+2] ^= 0xff
 		data[i+3] ^= 0xff
-		w.testInput(data, depth, execSmash)
+		w.testInput(data, new(mutationSource), depth, execSmash)
 		data[i] ^= 0xff
 		data[i+1] ^= 0xff
 		data[i+2] ^= 0xff
@@ -478,10 +494,10 @@ func (w *Worker) smash(data []byte, depth int) {
 	for i := 0; i < len(data); i++ {
 		for j := uint8(1); j <= 4; j++ {
 			data[i] += j
-			w.testInput(data, depth, execSmash)
+			w.testInput(data, new(mutationSource), depth, execSmash)
 			data[i] -= j
 			data[i] -= j
-			w.testInput(data, depth, execSmash)
+			w.testInput(data, new(mutationSource), depth, execSmash)
 			data[i] += j
 		}
 	}
@@ -491,7 +507,7 @@ func (w *Worker) smash(data []byte, depth int) {
 		v := data[i]
 		for _, x := range interesting8 {
 			data[i] = uint8(x)
-			w.testInput(data, depth, execSmash)
+			w.testInput(data, new(mutationSource), depth, execSmash)
 		}
 		data[i] = v
 	}
@@ -502,10 +518,10 @@ func (w *Worker) smash(data []byte, depth int) {
 		v := *p
 		for _, x := range interesting16 {
 			*p = x
-			w.testInput(data, depth, execSmash)
+			w.testInput(data, new(mutationSource), depth, execSmash)
 			if x != 0 && x != -1 {
 				*p = int16(bits.ReverseBytes16(uint16(x)))
-				w.testInput(data, depth, execSmash)
+				w.testInput(data, new(mutationSource), depth, execSmash)
 			}
 		}
 		*p = v
@@ -517,10 +533,10 @@ func (w *Worker) smash(data []byte, depth int) {
 		v := *p
 		for _, x := range interesting32 {
 			*p = x
-			w.testInput(data, depth, execSmash)
+			w.testInput(data, new(mutationSource), depth, execSmash)
 			if x != 0 && x != -1 {
 				*p = int32(bits.ReverseBytes32(uint32(x)))
-				w.testInput(data, depth, execSmash)
+				w.testInput(data, new(mutationSource), depth, execSmash)
 			}
 		}
 		*p = v
@@ -529,7 +545,7 @@ func (w *Worker) smash(data []byte, depth int) {
 	// Trim after every byte.
 	for i := 1; i < len(data); i++ {
 		tmp := data[:i]
-		w.testInput(tmp, depth, execSmash)
+		w.testInput(tmp, new(mutationSource), depth, execSmash)
 	}
 
 	// Insert a byte after every byte.
@@ -541,27 +557,29 @@ func (w *Worker) smash(data []byte, depth int) {
 		copy(tmp, data[:i])
 		copy(tmp[i+1:], data[i:])
 		tmp[i] = 0
-		w.testInput(tmp, depth, execSmash)
+		w.testInput(tmp, new(mutationSource), depth, execSmash)
 		tmp[i] = 'a'
-		w.testInput(tmp, depth, execSmash)
+		w.testInput(tmp, new(mutationSource), depth, execSmash)
 	}
 
 	// Do a bunch of random mutations so that this input catches up with the rest.
 	for i := 0; i < 1e4; i++ {
-		tmp := w.mutator.mutate(data, ro)
-		w.testInput(tmp, depth+1, execFuzz)
+		tmp, whence := w.mutator.mutate(data, ro)
+		w.testInput(tmp, whence, depth+1, execFuzz)
 	}
 }
 
-func (w *Worker) testInput(data []byte, depth, typ int) {
-	w.testInputImpl(w.coverBin, data, depth, typ)
+func (w *Worker) testInput(data []byte, whence *mutationSource, depth, typ int) {
+	whence.ExecType = append(whence.ExecType, byte(typ))
+	w.testInputImpl(w.coverBin, data, whence, depth, typ)
 }
 
-func (w *Worker) testInputSonar(data []byte, depth int) (sonar []byte) {
-	return w.testInputImpl(w.sonarBin, data, depth, execSonar)
+func (w *Worker) testInputSonar(data []byte, whence *mutationSource, depth int) (sonar []byte) {
+	whence.ExecType = append(whence.ExecType, execSonar)
+	return w.testInputImpl(w.sonarBin, data, whence, depth, execSonar)
 }
 
-func (w *Worker) testInputImpl(bin *TestBinary, data []byte, depth, typ int) (sonar []byte) {
+func (w *Worker) testInputImpl(bin *TestBinary, data []byte, whence *mutationSource, depth, typ int) (sonar []byte) {
 	ro := w.hub.ro.Load().(*ROData)
 	if len(ro.badInputs) > 0 {
 		if _, ok := ro.badInputs[hash(data)]; ok {
@@ -571,24 +589,25 @@ func (w *Worker) testInputImpl(bin *TestBinary, data []byte, depth, typ int) (so
 	w.execs[typ]++
 	res, _, cover, sonar, output, crashed, hanged := bin.test(data)
 	if crashed {
-		w.noteCrasher(data, output, hanged)
+		w.noteCrasher(data, output, hanged, whence)
 		return nil
 	}
-	w.noteNewInput(data, cover, res, depth, typ)
+	w.noteNewInput(data, cover, res, whence, depth, typ)
 	return sonar
 }
 
-func (w *Worker) noteNewInput(data, cover []byte, res, depth, typ int) {
+func (w *Worker) noteNewInput(data, cover []byte, res int, whence *mutationSource, depth, typ int) {
 	if res < 0 {
 		// User said to not add this input to corpus.
 		return
 	}
 	if w.hub.updateMaxCover(cover) {
-		w.triageQueue = append(w.triageQueue, CoordinatorInput{makeCopy(data), uint64(depth), typ, false, false})
+		whence.ExecType = append(whence.ExecType, byte(typ))
+		w.triageQueue = append(w.triageQueue, CoordinatorInput{makeCopy(data), uint64(depth), typ, false, false, whence})
 	}
 }
 
-func (w *Worker) noteCrasher(data, output []byte, hanged bool) {
+func (w *Worker) noteCrasher(data, output []byte, hanged bool, whence *mutationSource) {
 	ro := w.hub.ro.Load().(*ROData)
 	supp := extractSuppression(output)
 	if _, ok := ro.suppressions[hash(supp)]; ok {
@@ -599,7 +618,12 @@ func (w *Worker) noteCrasher(data, output []byte, hanged bool) {
 		Error:       output,
 		Suppression: supp,
 		Hanging:     hanged,
+		Whence:      whence,
 	})
+}
+
+func (w *Worker) noteSonarSample(b []byte) {
+	w.mutator.addSonarSample(b)
 }
 
 func (w *Worker) periodicCheck() {

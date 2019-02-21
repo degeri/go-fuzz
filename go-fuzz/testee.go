@@ -89,7 +89,8 @@ func (bin *TestBinary) close() {
 
 func (bin *TestBinary) test(data []byte) (res int, ns uint64, cover, sonar, output []byte, crashed, hanged bool) {
 	if len(data) > MaxInputSize {
-		panic("input is too large")
+		data = data[:MaxInputSize]
+		// panic("input is too large")
 	}
 	for {
 		// This is the only function that is executed regularly,

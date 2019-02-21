@@ -236,6 +236,17 @@ func (hub *Hub) loop() {
 			if *flagV >= 2 {
 				log.Printf("hub received new input [%v]%v mine=%v", len(input.data), hash(input.data), input.mine)
 			}
+			switch {
+			case input.whence == nil:
+				fmt.Println("nil whence!?")
+			case len(input.whence.ExecType) > 0 && input.whence.ExecType[len(input.whence.ExecType)-1] == execCorpus:
+				// NO-OP
+				// could print
+			// case input.whence.InitialCorpus:
+			// 	fmt.Println("initial corpus")
+			default:
+				fmt.Printf("NEW COVERAGE VIA %v\n", input.whence)
+			}
 			hub.corpusSigs[sig] = struct{}{}
 			ro1 := new(ROData)
 			*ro1 = *ro
@@ -258,7 +269,7 @@ func (hub *Hub) loop() {
 			hub.corpusOrigins[input.typ]++
 
 			if input.mine {
-				if err := hub.coordinator.Call("Coordinator.NewInput", NewInputArgs{hub.id, input.data, uint64(input.depth)}, nil); err != nil {
+				if err := hub.coordinator.Call("Coordinator.NewInput", NewInputArgs{hub.id, input.data, uint64(input.depth), input.whence}, nil); err != nil {
 					log.Printf("new input call failed: %v, reconnecting to coordinator", err)
 					if err := hub.connect(); err != nil {
 						log.Printf("failed to connect to coordinator: %v, killing worker", err)

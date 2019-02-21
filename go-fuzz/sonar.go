@@ -97,6 +97,25 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 		flags := sam.flags
 		v1 := sam.val[0]
 		v2 := sam.val[1]
+
+		// TODO: this is disabled for now.
+		// We need to determine whether this is worth it.
+		// If we only accept constants, then we already have good literal collection doing that job.
+		// Maybe encountering a constant could increase its score?
+		// If we accept non-constants, we get a bunch of junk.
+		// We already really need to separate by the various flags:
+		// Is this a string? A signed int? An unsigned int?
+		if false {
+			// These flags/const checks are confusing.
+			// Pay attention to whether we are asking for the flag to be set or not!
+			if flags&SonarConst1 == 0 && flags&SonarString != 0 {
+				w.noteSonarSample(v2)
+			}
+			if flags&SonarConst2 == 0 && flags&SonarString != 0 {
+				w.noteSonarSample(v1)
+			}
+		}
+
 		res := sam.evaluate()
 		// Ignore sites that has at least one const operand and
 		// are already taken both ways enough times.
@@ -112,10 +131,10 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 			// no point in trying to break equality here.
 			continue
 		}
-		testInput := func(tmp []byte) {
-			w.testInput(tmp, depth+1, execSonarHint)
+		testInput := func(tmp []byte, description string) {
+			w.testInput(tmp, &mutationSource{Sonar: description}, depth+1, execSonarHint)
 		}
-		check := func(indexdata, v1, v2 []byte) {
+		check := func(indexdata, v1, v2 []byte, description string) {
 			if len(v1) == 0 || bytes.Equal(v1, v2) || !bytes.Contains(indexdata, v1) {
 				return
 			}
@@ -130,6 +149,8 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 			}
 			checked[vv] = struct{}{}
 			pos := 0
+			// Replace each instance, one at a time.
+			var instances []int
 			for {
 				i := bytes.Index(indexdata[pos:], v1)
 				if i == -1 {
@@ -137,6 +158,7 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 				}
 				i += pos
 				pos = i + 1
+				instances = append(instances, i)
 				tmp := make([]byte, len(data)-len(v1)+len(v2))
 				copy(tmp, data[:i])
 				copy(tmp[i:], v2)
@@ -144,31 +166,38 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 				if len(tmp) > CoverSize {
 					tmp = tmp[:CoverSize]
 				}
-				testInput(tmp)
+				testInput(tmp, description)
 				if flags&SonarString != 0 && len(v1) != len(v2) && len(tmp) < CoverSize {
 					// Update length field.
 					// TODO: handle multi-byte/big-endian/base-128 length fields.
 					diff := byte(len(v2) - len(v1))
 					for idx := i - 1; idx >= 0 && idx+5 >= i; idx-- {
 						tmp[idx] += diff
-						testInput(tmp)
+						testInput(tmp, "string-"+description)
 						tmp[idx] -= diff
 					}
 				}
 			}
+			if len(instances) > 1 {
+				// Replace all.
+				tmp := bytes.Replace(data, v1, v2, -1)
+				testInput(tmp, "replaceall-"+description)
+				// TODO: figure out how to update length field (that's why instances is a slice)
+				// TODO: replace random subset?
+			}
 		}
 		check1 := func(v1, v2 []byte) {
-			check(data, v1, v2)
+			check(data, v1, v2, "base")
 			// TODO: for strings check upper/lower case.
 			if flags&SonarString != 0 {
 				if bytes.Equal(v1, bytes.ToLower(v1)) && bytes.Equal(v2, bytes.ToLower(v2)) {
 					if lower := bytes.ToLower(data); len(lower) == len(data) {
-						check(lower, v1, v2)
+						check(lower, v1, v2, "lowercase")
 					}
 				}
 				if bytes.Equal(v1, bytes.ToUpper(v1)) && bytes.Equal(v2, bytes.ToUpper(v2)) {
 					if upper := bytes.ToUpper(data); len(upper) == len(data) {
-						check(upper, v1, v2)
+						check(upper, v1, v2, "uppercase")
 					}
 				}
 			} else {
@@ -179,27 +208,27 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 
 				if len(v1) == 1 && len(v2) == 1 && unicode.IsLower(rune(v1[0])) && unicode.IsLower(rune(v2[0])) {
 					if lower := bytes.ToLower(data); len(lower) == len(data) {
-						check(lower, v1, v2)
+						check(lower, v1, v2, "lowercase")
 					}
 				}
 				if len(v1) == 1 && len(v2) == 1 && unicode.IsUpper(rune(v1[0])) && unicode.IsUpper(rune(v2[0])) {
 					if upper := bytes.ToUpper(data); len(upper) == len(data) {
-						check(upper, v1, v2)
+						check(upper, v1, v2, "uppercase")
 					}
 				}
 
 				// Increment and decrement take care of less and greater comparison operators
 				// as well as of off-by-one bugs.
-				check(data, v1, increment(v2))
-				check(data, v1, decrement(v2))
+				check(data, v1, increment(v2), "inc")
+				check(data, v1, decrement(v2), "dec")
 
 				// Also try big-endian increments/decrements.
 				if len(v1) > 1 {
-					check(data, reverse(v1), reverse(v2))
-					check(data, reverse(v1), reverse(increment(v2)))
-					check(data, reverse(v1), reverse(decrement(v2)))
-					check(data, v1, reverse(increment(reverse(v2))))
-					check(data, v1, reverse(decrement(reverse(v2))))
+					check(data, reverse(v1), reverse(v2), "rev")
+					check(data, reverse(v1), reverse(increment(v2)), "rev-inc")
+					check(data, reverse(v1), reverse(decrement(v2)), "rev-dec")
+					check(data, v1, reverse(increment(reverse(v2))), "rev-inc-rev")
+					check(data, v1, reverse(decrement(reverse(v2))), "rev-dec-rev")
 				}
 
 				// Varint, ascii
@@ -212,23 +241,27 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 						var vv1, vv2 [10]byte
 						n1 := binary.PutUvarint(vv1[:], u1)
 						n2 := binary.PutUvarint(vv2[:], u2)
-						check(data, vv1[:n1], vv2[:n2])
+						check(data, vv1[:n1], vv2[:n2], "uvarint")
 
 						// Increment/decrement in base-128.
 						n1 = binary.PutUvarint(vv1[:], u1+1)
 						n2 = binary.PutUvarint(vv2[:], u2+1)
-						check(data, vv1[:n1], vv2[:n2])
+						check(data, vv1[:n1], vv2[:n2], "uvarint-inc")
 						n1 = binary.PutUvarint(vv1[:], u1-1)
 						n2 = binary.PutUvarint(vv2[:], u2-1)
-						check(data, vv1[:n1], vv2[:n2])
+						check(data, vv1[:n1], vv2[:n2], "uvarint-dec")
 					}
 
 					// Ascii-encoding.
+					// TODO: use a re-usable slice with broader scope
+					var b []byte
 					for _, base := range [...]int{2, 8, 10, 16} {
-						s1 := strconv.FormatUint(u1, base)
-						s2 := strconv.FormatUint(u2, base)
+						b1 := strconv.AppendUint(b, u1, base)
+						b2 := strconv.AppendUint(b1, u2, base)
+						b = b2[:0]
+						b2 = b2[len(b1):]
 						// TODO: add prefixes like 0b, 0, 0x?
-						check(data, []byte(s1), []byte(s2))
+						check(data, b1, b2, "uascii")
 					}
 				}
 
@@ -241,23 +274,27 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 					var vv1, vv2 [10]byte
 					n1 := binary.PutVarint(vv1[:], u1)
 					n2 := binary.PutVarint(vv2[:], u2)
-					check(data, vv1[:n1], vv2[:n2])
+					check(data, vv1[:n1], vv2[:n2], "varint")
 
 					// Increment/decrement in base-128.
 					n1 = binary.PutVarint(vv1[:], u1+1)
 					n2 = binary.PutVarint(vv2[:], u2+1)
-					check(data, vv1[:n1], vv2[:n2])
+					check(data, vv1[:n1], vv2[:n2], "varint-inc")
 					n1 = binary.PutVarint(vv1[:], u1-1)
 					n2 = binary.PutVarint(vv2[:], u2-1)
-					check(data, vv1[:n1], vv2[:n2])
+					check(data, vv1[:n1], vv2[:n2], "varint-dec")
 					// }
 
 					// Ascii-encoding.
+					// TODO: use a re-usable slice with broader scope
+					var b []byte
 					for _, base := range [...]int{2, 8, 10, 16} {
-						s1 := strconv.FormatInt(u1, base)
-						s2 := strconv.FormatInt(u2, base)
+						b1 := strconv.AppendInt(b, u1, base)
+						b2 := strconv.AppendInt(b1, u2, base)
+						b = b2[:0]
+						b2 = b2[len(b1):]
 						// TODO: add prefixes like 0b, 0, 0x?
-						check(data, []byte(s1), []byte(s2))
+						check(data, b1, b2, "ascii")
 					}
 				}
 
@@ -295,7 +332,7 @@ func (w *Worker) processSonarData(data, sonar []byte, depth int, smash bool) {
 				checkint(sl1, sl2)
 				checkint(sb1, sb2)
 			}
-			check(data, []byte(hex.EncodeToString(v1)), []byte(hex.EncodeToString(v2)))
+			check(data, []byte(hex.EncodeToString(v1)), []byte(hex.EncodeToString(v2)), "hex")
 		}
 		if flags&SonarConst1 == 0 {
 			check1(v1, v2)

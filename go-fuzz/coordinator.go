@@ -235,6 +235,7 @@ type CoordinatorInput struct {
 	Type      int
 	Minimized bool
 	Smashed   bool
+	Whence    *mutationSource
 }
 
 // Connect attaches new worker to coordinator.
@@ -252,15 +253,16 @@ func (c *Coordinator) Connect(a *ConnectArgs, r *ConnectRes) error {
 	r.ID = w.id
 	// Give the worker initial corpus.
 	for _, a := range c.corpus.m {
-		r.Corpus = append(r.Corpus, CoordinatorInput{a.data, a.meta, execCorpus, !a.user, true})
+		r.Corpus = append(r.Corpus, CoordinatorInput{a.data, a.meta, execCorpus, !a.user, true, &mutationSource{InitialCorpus: true}})
 	}
 	return nil
 }
 
 type NewInputArgs struct {
-	ID   int
-	Data []byte
-	Prio uint64
+	ID     int
+	Data   []byte
+	Prio   uint64
+	Whence *mutationSource
 }
 
 // NewInput saves new interesting input on coordinator.
@@ -280,7 +282,7 @@ func (c *Coordinator) NewInput(a *NewInputArgs, r *int) error {
 	c.lastInput = time.Now()
 	// Queue the input for sending to every worker.
 	for _, w1 := range c.workers {
-		w1.pending = append(w1.pending, CoordinatorInput{a.Data, a.Prio, execCorpus, true, w1 != w})
+		w1.pending = append(w1.pending, CoordinatorInput{a.Data, a.Prio, execCorpus, true, w1 != w, a.Whence})
 	}
 
 	return nil
@@ -291,6 +293,7 @@ type NewCrasherArgs struct {
 	Error       []byte
 	Suppression []byte
 	Hanging     bool
+	Whence      *mutationSource
 }
 
 // NewCrasher saves new crasher input on coordinator.
@@ -320,6 +323,8 @@ func (c *Coordinator) NewCrasher(a *NewCrasherArgs, r *int) error {
 	}
 	c.crashers.addDescription(a.Data, buf.Bytes(), "quoted")
 	c.crashers.addDescription(a.Data, a.Error, "output")
+
+	fmt.Println("CRASHER VIA", a.Whence)
 
 	return nil
 }
