@@ -497,9 +497,8 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			buf := m.randSlice(res, len(lit))
 			copy(buf, lit)
 		case 20:
-			r := string(res)
-			lit := m.sc.Pick(r) // TODO: change pick signature, rationalize with the rest of corpus construction
-			if lit == "" {
+			lit := m.sc.Pick(res)
+			if lit == nil {
 				iter--
 				continue
 			}
@@ -509,7 +508,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			// TODO: pick only a like kind literal (string for string, int for int, etc.)
 			replace := m.pickLiteral(ro)
 			// loop until the replacement is different than the original
-			for string(replace) == lit {
+			for bytes.Equal(replace, lit) {
 				replace = m.pickLiteral(ro)
 			}
 
@@ -524,33 +523,33 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 			switch sub {
 			case 0:
 				// replace the first instance
-				i := strings.Index(r, lit)
+				i := bytes.Index(res, lit)
 				if i < 0 {
 					panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
 				}
 				res = splice(res, i, len(lit), replace)
 			case 1:
 				// replace the last instance
-				i := strings.LastIndex(r, lit)
+				i := bytes.LastIndex(res, lit)
 				if i < 0 {
 					panic(fmt.Errorf("substr.Pick failed on %q %q", res, lit))
 				}
 				res = splice(res, i, len(lit), replace)
 			case 2:
 				// replace all instances
-				res = bytes.Replace(res, []byte(lit), replace, -1)
+				res = bytes.Replace(res, lit, replace, -1)
 			case 3:
 				// replace a random instance:
 				// pick a random offset, find the first instance before/after that offset, replace it.
 				pos := m.rand(len(res))
-				i := strings.Index(r[pos:], lit)
+				i := bytes.Index(res[pos:], lit)
 				if i < 0 {
-					i = strings.LastIndex(r[:pos], lit)
+					i = bytes.LastIndex(res[:pos], lit)
 					if i < 0 {
 						// we must be in the middle of the only instance of lit!
 						// do a replace all, since that is simple to implement.
 						// TODO: restructure all of this for unity?
-						res = bytes.Replace(res, []byte(lit), replace, -1)
+						res = bytes.Replace(res, lit, replace, -1)
 						break
 					}
 				} else {
@@ -561,7 +560,7 @@ func (m *Mutator) mutate(data []byte, ro *ROData) ([]byte, *mutationSource) {
 				// replace random instances with probably 1/2 for each
 				// TODO: pick different lits for each replacement?
 				var tmp []byte
-				fields := strings.Split(r, lit)
+				fields := bytes.Split(res, lit)
 				for i, field := range fields {
 					if i == len(fields)-1 {
 						break

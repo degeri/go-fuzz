@@ -1,8 +1,8 @@
 package substr
 
 import (
+	"bytes"
 	"math/rand"
-	"strings"
 
 	"github.com/dvyukov/go-fuzz/go-fuzz/internal/pcg"
 )
@@ -44,13 +44,12 @@ func NewCorpus(r *rand.Rand, ss []string) *Corpus {
 	}
 
 	// TODO: create c.rk
-
 	return c
 }
 
-// Pick returns a random corpus element that is a substring of s.
+// Pick returns a random corpus element that is a substring of b.
 // If no element of the corpus is a substring of s, it returns "".
-func (c *Corpus) Pick(s string) string {
+func (c *Corpus) Pick(b []byte) []byte {
 	const impl = 1
 	// Implementation option 1: Pick a random element of the corpus, check whether it is a substring of s, return it if so.
 	// This isn't a great choice, because it is very inefficient in the case in which no corpus element is a substring of s.
@@ -62,9 +61,9 @@ func (c *Corpus) Pick(s string) string {
 			// Select an element at random to try.
 			idx := c.r.Uint32n(uint32(len(p)))
 			x := p[idx]
-			candidate := c.ss[x]
-			if strings.Contains(s, candidate) {
-				return candidate
+			needle := c.bb[x]
+			if bytes.Contains(b, needle) {
+				return needle
 			}
 			// No luck. Move that element out of the way and try again.
 			p[0], p[idx] = p[idx], p[0]
@@ -72,7 +71,7 @@ func (c *Corpus) Pick(s string) string {
 			p = p[1:]
 		}
 		// Didn't find anything.
-		return ""
+		return nil
 	}
 
 	/*
