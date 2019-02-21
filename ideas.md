@@ -116,3 +116,8 @@ if there's no exec type...
 
 avoid network connection to own process, just call func instead, might reduce scheduler churn
 improve literal collection again (no stringer files, don't throw in a million ints in little/big/etc form, do that lazily)
+
+---
+
+apply epsilon-greedy decision making to sonar, versifier, MUST account for cost!
+
