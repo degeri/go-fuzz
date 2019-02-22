@@ -424,9 +424,38 @@ func (lc *LiteralCollector) Visit(n ast.Node) (w ast.Visitor) {
 				return nil
 			}
 		case *ast.SelectorExpr:
-			// TODO: ignore package log as well?
-			if id, ok := fn.X.(*ast.Ident); ok && (id.Name == "fmt" || id.Name == "errors") {
+			// TODO: don't ignore these packages when fuzzing them (bit of a special case).
+			if id, ok := fn.X.(*ast.Ident); ok && (id.Name == "fmt" || id.Name == "errors" || id.Name == "log") {
 				return nil
+			}
+			switch fn.Sel.Name {
+			case "errorf", "warnf":
+				return nil
+			}
+		}
+
+		// Quick and dirty attempt to examine whether we're looking at a printf-style wrapper,
+		// which we probably want to ignore under most circumstances.
+		// This broadly follows func maybePrintfWrapper.
+		// TODO: pull in the full printf analysis machinery and use it?
+		fntype := lc.info.Types[nn.Fun].Type
+		if sig, ok := fntype.(*types.Signature); ok && sig.Variadic() {
+			// Variadic function.
+			params := sig.Params()
+			nparams := params.Len()
+			finalarg := params.At(nparams - 1)
+			if slice, ok := finalarg.Type().(*types.Slice); ok { // this can happen with append
+				if iface, ok := slice.Elem().(*types.Interface); ok && iface.Empty() {
+					// Final args param is ...interface{}.
+					if nparams >= 2 && params.At(nparams-2).Type() == types.Typ[types.String] {
+						// Second to last param is a string.
+						// Probably a printf wrapper.
+						// Ignore it entirely.
+						// TODO: check for a % in the format string?
+						// TODO: ignore only the format string?
+						return nil
+					}
+				}
 			}
 		}
 		return lc
