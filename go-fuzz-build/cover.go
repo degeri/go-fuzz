@@ -434,6 +434,15 @@ func (lc *LiteralCollector) Visit(n ast.Node) (w ast.Visitor) {
 }
 
 func (lc *LiteralCollector) addString(s string) {
+	if s == "" {
+		return
+	}
+	if len(s) > 20 {
+		// Ignore long strings.
+		// They are probably templates or generated code.
+		// This cutoff matches the sonar cutoff.
+		return
+	}
 	lc.lits[Literal{s, true}] = struct{}{}
 }
 
