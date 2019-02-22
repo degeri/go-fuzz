@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	. "github.com/dvyukov/go-fuzz/go-fuzz-defs"
@@ -172,7 +173,16 @@ func createMeta(lits map[Literal]struct{}, blocks []CoverBlock, sonar []CoverBlo
 			meta.Literals.Ints = append(meta.Literals.Ints, k.Val)
 		}
 	}
-	data, err := json.Marshal(meta)
+	var data []byte
+	var err error
+	const debug = false
+	if debug {
+		sort.Strings(meta.Literals.Strings)
+		sort.Strings(meta.Literals.Ints)
+		data, err = json.MarshalIndent(meta, "", "  ")
+	} else {
+		data, err = json.Marshal(meta)
+	}
 	if err != nil {
 		failf("failed to serialize meta information: %v", err)
 	}
