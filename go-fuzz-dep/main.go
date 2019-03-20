@@ -22,15 +22,12 @@ var (
 	input []byte
 )
 
-func init() {
+func Main(f func([]byte) int) {
 	var mem []byte
 	mem, inFD, outFD = setupCommFile()
 	CoverTab = (*[CoverSize]byte)(unsafe.Pointer(&mem[0]))
 	input = mem[CoverSize : CoverSize+MaxInputSize]
 	sonarRegion = mem[CoverSize+MaxInputSize:]
-}
-
-func Main(f func([]byte) int) {
 	runtime.GOMAXPROCS(1) // makes coverage more deterministic, we parallelize on higher level
 	for {
 		n := read(inFD)

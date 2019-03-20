@@ -516,7 +516,7 @@ func (c *Context) instrumentPackages(blocks *[]CoverBlock, sonar *[]CoverBlock) 
 			buf := new(bytes.Buffer)
 			content := c.readFile(fullName)
 			buf.Write(initialComments(content)) // Retain '// +build' directives.
-			instrument(pkg.PkgPath, fullName, pkg.Fset, f, pkg.TypesInfo, buf, blocks, sonar)
+			instrument(pkg.PkgPath, fullName, pkg.Fset, f, pkg.Types, pkg.TypesInfo, buf, blocks, sonar)
 			tmp := c.tempFile()
 			c.writeFile(tmp, buf.Bytes())
 			outpath := filepath.Join(path, fname)

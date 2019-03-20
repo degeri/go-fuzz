@@ -22,7 +22,7 @@ import (
 
 const fuzzdepPkg = "_go_fuzz_dep_"
 
-func instrument(pkg, fullName string, fset *token.FileSet, parsedFile *ast.File, info *types.Info, out io.Writer, blocks *[]CoverBlock, sonar *[]CoverBlock) {
+func instrument(pkg, fullName string, fset *token.FileSet, parsedFile *ast.File, tpkg *types.Package, info *types.Info, out io.Writer, blocks *[]CoverBlock, sonar *[]CoverBlock) {
 	file := &File{
 		fset:     fset,
 		pkg:      pkg,
@@ -30,6 +30,7 @@ func instrument(pkg, fullName string, fset *token.FileSet, parsedFile *ast.File,
 		astFile:  parsedFile,
 		blocks:   blocks,
 		info:     info,
+		tpkg:     tpkg,
 	}
 	if sonar == nil {
 		file.addImport("go-fuzz-dep", fuzzdepPkg, "CoverTab")
@@ -492,16 +493,55 @@ type File struct {
 	astFile  *ast.File
 	blocks   *[]CoverBlock
 	info     *types.Info
+	tpkg     *types.Package
 }
 
 var slashslash = []byte("//")
 
 func (f *File) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
+	case *ast.FuncDecl:
+		if n.Name.String() == "init" {
+			// Don't instrument init functions.
+			// They run regardless of what we do, so it is just noise.
+			return nil
+		}
 	case *ast.GenDecl:
 		if n.Tok != token.VAR {
 			return nil // constants and types are not interesting
 		}
+		// if f.pkg == "math" && strings.Contains(f.fullName, "exp_asm.go") {
+		// fmt.Println("---")
+		// var pos token.Pos
+		// for _, s := range n.Specs {
+		// 	for _, i := range s.(*ast.ValueSpec).Names {
+		// 		fmt.Println("id", i)
+		// 		// pos = i.Pos()
+		// 	}
+		// }
+		s := f.tpkg.Scope().Innermost(n.TokPos)
+		if s != nil && s.Parent() == f.tpkg.Scope() {
+			// top level var is executed during init; uninteresting
+			return nil
+		}
+		// fmt.Printf("%v\n%v\n%v\n", n, s, s != nil && s.Parent() == f.tpkg.Scope())
+		// fmt.Println()
+		// }
+		/*
+					var id *ast.Ident
+			IdentSearch:
+					for _, s := range n.Specs {
+						for _, x := range s.Names {
+							id = x
+							break IdentSearch
+						}
+					}
+					if id == nil {
+						return nil
+					}
+					def := f.info.Defs[id]
+					scope := def.Parent()
+		*/
 
 	case *ast.BlockStmt:
 		// If it's a switch or select, the body is a list of case clauses; don't tag the block itself.
